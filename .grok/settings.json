@@ -1,0 +1,17 @@
+{
+  "model": "grok-code-fast-1",
+  "mcpServers": {
+    "metavr": {
+      "name": "metavr",
+      "transport": {
+        "type": "stdio",
+        "command": "~/.metavr/bin/metavr",
+        "args": [
+          "mcp",
+          "server"
+        ],
+        "env": {}
+      }
+    }
+  }
+}

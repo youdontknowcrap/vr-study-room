@@ -102,7 +102,8 @@ export class BookSystem extends createSystem({}) {
   private putOnDesk(): void {
     const anchor = app.room.bookAnchor;
     anchor.updateWorldMatrix(true, false);
-    anchor.matrixWorld.decompose(app.book.root.position, app.book.root.quaternion, target);
+    // Use a dedicated scratch scale; target is the position scratch reused elsewhere.
+    anchor.matrixWorld.decompose(app.book.root.position, app.book.root.quaternion, ONE);
   }
 
   /** Hold the book above the palm, turned toward your eyes (like reading). */

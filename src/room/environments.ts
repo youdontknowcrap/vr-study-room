@@ -62,9 +62,15 @@ export class EnvironmentManager {
   async show(id: EnvironmentId): Promise<void> {
     const def: EnvDef = ENVIRONMENTS[id];
     const token = ++this.loadToken;
-    const tex: Texture = await this.loader.loadAsync(
-      `${import.meta.env.BASE_URL}environments/${def.polyHavenId}_2k.jpg`,
-    );
+    let tex: Texture | null = null;
+    try {
+      tex = await this.loader.loadAsync(
+        `${import.meta.env.BASE_URL}environments/${def.polyHavenId}_2k.jpg`,
+      );
+    } catch (e) {
+      // Keep previous environment on failure (offline / bad asset path).
+      return;
+    }
     if (token !== this.loadToken) {
       tex.dispose(); // a newer request won the race
       return;

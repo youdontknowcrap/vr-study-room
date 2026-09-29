@@ -76,7 +76,9 @@ export class PdfPages {
   dispose(): void {
     for (const tex of this.textures.values()) tex.dispose();
     this.textures.clear();
-    void this.doc?.loadingTask.destroy(); // also terminates worker-side state
+    // loadingTask may be absent depending on pdf.js version / state; guard it.
+    const lt = (this.doc as unknown as { loadingTask?: { destroy?: () => void } })?.loadingTask;
+    if (lt && typeof lt.destroy === 'function') void lt.destroy();
     this.doc = null;
   }
 
