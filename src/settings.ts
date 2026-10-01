@@ -150,6 +150,12 @@ function boolSignal(key: string, fallback: boolean) {
   return sig;
 }
 
+/**
+ * The floating "Exit to browser" card. Shown in VR until this is turned off
+ * from the main menu. The flat-page Enter VR button is separate.
+ */
+export const showExitBrowser = boolSignal('vrStudyRoom.showExitBrowser', true);
+
 /** A setting that must be one of a fixed list of numbers (cycled by -/+ buttons). */
 function levelSignal(key: string, levels: readonly number[], fallback: number) {
   let initial = fallback;

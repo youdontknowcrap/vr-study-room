@@ -29,6 +29,7 @@ import {
   pdfResolution,
   pdfStreaming,
   perfStats,
+  showExitBrowser,
   stepLevel,
 } from '../settings.js';
 import { pdfKeepCount } from '../book/page-window.js';
@@ -253,6 +254,9 @@ export class MenuSystem extends createSystem({}) {
       case 'recenter':
         actions.recenter = true; // BookSystem picks this up this frame
         break;
+      case 'exit-browser':
+        showExitBrowser.value = !showExitBrowser.value;
+        break;
       case 'prev-page':
         app.book.turnPage(-1);
         break;
@@ -366,6 +370,7 @@ export class MenuSystem extends createSystem({}) {
           { id: 'room', label: `Room: ${app.room.name} ⇄` },
           { id: 'quality', label: `Quality: ${roomQuality.value === 'high' ? 'High' : 'Lite'}` },
         ],
+        [{ id: 'exit-browser', label: `Exit to browser: ${showExitBrowser.value ? 'On' : 'Off'}` }],
         [
           { id: 'recenter', label: 'Recenter' },
           { id: 'perf', label: 'Big PDF ▸' },
