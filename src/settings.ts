@@ -209,3 +209,28 @@ export const pdfPreview = boolSignal(KEY_PDF_PREVIEW, true);
 
 /** On-screen stats readout (render ms, pages cached, texture MB, JS heap). */
 export const perfStats = boolSignal(KEY_PERF_STATS, false);
+
+/**
+ * The headset had saved queue off, cache "Old", and blurry-first off.
+ * That left the open pages at 360 px and held the loading square.
+ * Apply the working set once; the Big PDF menu can still change it after.
+ */
+function restoreReaderSettings(): void {
+  const revKey = 'vrStudyRoom.pdfSettingsRev';
+  try {
+    if (localStorage.getItem(revKey) === '2') return;
+  } catch {
+    return;
+  }
+  pdfStreaming.value = true;
+  pdfResolution.value = 1200;
+  pdfCacheSize.value = 10;
+  pdfRenderQueue.value = true;
+  pdfPreview.value = true;
+  try {
+    localStorage.setItem(revKey, '2');
+  } catch {
+    /* storage disabled: the values above still apply for this session */
+  }
+}
+restoreReaderSettings();

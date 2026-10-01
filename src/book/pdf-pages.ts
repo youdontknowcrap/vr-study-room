@@ -75,9 +75,10 @@ const PDFJS_ASSETS = {
   disableAutoFetch: true,
   disableStream: true,
   rangeChunkSize: RANGE_CHUNK_BYTES,
-  // Quest's OffscreenCanvas / ImageDecoder path blanks or rejects some files.
+  // OffscreenCanvas blanks some files on Quest. ImageDecoder stays on so a
+  // huge scan doesn't decode on the main thread and freeze the loading square.
   isOffscreenCanvasSupported: false,
-  isImageDecoderSupported: false,
+  isImageDecoderSupported: true,
   enableXfa: true,
   maxImageSize: MAX_IMAGE_PIXELS,
   useSystemFonts: true,
@@ -211,6 +212,10 @@ export class PdfPages implements BookPages {
   private wanted: Wanted[] = [];
   /** [4 QUEUE] The one render in flight. */
   private busy: Job | null = null;
+  /** performance.now() when `busy` started. Used to drop a paint that never returns. */
+  private busySince = 0;
+  /** How many times a page's paint was abandoned. Two strikes and we stop retrying it. */
+  private abandons = new Map<number, number>();
   /** Right-hand page of the spread the reader is actually on. */
   private viewCenter = 0;
   /** Pages that must stay on the GPU for the current spread. */
@@ -380,33 +385,33 @@ export class PdfPages implements BookPages {
   }
 
   /**
-   * Preview the pages a flip would show, sharpen the open spread, then
-   * preview the rest of the window. Far pages stay at the preview until
-   * you reach them, so a 10-page window isn't 10 full-resolution textures
-   * the moment the file opens.
+   * The open spread is sharpened first (left page, then right), so the
+   * page you're reading doesn't sit at 360 px while neighbors paint.
+   * Then a preview of the pages a flip would show, so the loading square
+   * can leave. Far pages stay at the preview.
    */
   private rebuildWanted(): void {
-    const unlock = new Set(
-      UNLOCK_OFFSETS.map((d) => this.viewCenter + d).filter((i) => this.keep.has(i)),
-    );
-    const preview = (indexes: number[]): Wanted[] => {
-      const out: Wanted[] = [];
-      for (const i of indexes) {
-        if (this.failed.has(i) && !this.textures.has(i)) continue;
-        if (this.textures.has(i)) continue;
-        out.push({ index: i, phase: pdfPreview.value ? 'preview' : 'sharp' });
+    const center = this.viewCenter;
+    const open = [center - 1, center].filter((i) => this.keep.has(i));
+    const later = UNLOCK_OFFSETS.map((d) => center + d).filter((i) => this.keep.has(i) && !open.includes(i));
+    const rest = this.renderOrder(center).filter((i) => !open.includes(i) && !later.includes(i));
+    const wanted: Wanted[] = [];
+    const push = (i: number, phase: Phase): void => {
+      if (this.failed.has(i) && !this.textures.has(i)) return;
+      if (phase === 'preview') {
+        if (this.textures.has(i)) return;
+        wanted.push({ index: i, phase: pdfPreview.value ? 'preview' : 'sharp' });
+        return;
       }
-      return out;
+      if (!this.isFresh(this.textures.get(i)) && !this.failed.has(i)) wanted.push({ index: i, phase: 'sharp' });
     };
-    const order = this.renderOrder(this.viewCenter);
-    const unlockOrder = UNLOCK_OFFSETS.map((d) => this.viewCenter + d).filter((i) => unlock.has(i));
-    const rest = order.filter((i) => !unlock.has(i));
-    const sharp: Wanted[] = [];
-    for (const i of unlockOrder) {
-      const e = this.textures.get(i);
-      if (e && !this.isFresh(e) && !this.failed.has(i)) sharp.push({ index: i, phase: 'sharp' });
-    }
-    this.wanted = [...preview(unlockOrder), ...sharp, ...preview(rest)];
+    // phase 'sharp' paints a preview first when the page is still blank,
+    // then the 1200 px pass, before the queue moves on.
+    for (const i of open) push(i, 'sharp');
+    for (const i of later) push(i, 'preview');
+    for (const i of later) push(i, 'sharp');
+    for (const i of rest) push(i, 'preview');
+    this.wanted = wanted;
   }
 
   /** Warm up pages around `center` and drop textures outside the cache window. */
@@ -574,6 +579,7 @@ export class PdfPages implements BookPages {
     if (!next) return;
     const job: Job = { index: next.index, phase: next.phase, task: null, cancelled: false };
     this.busy = job;
+    this.busySince = performance.now();
     this.trace('pdf.pump', { page: next.index + 1, phase: next.phase });
     void this.renderPage(next.index, job).finally(() => {
       if (this.busy === job) this.busy = null;
@@ -770,18 +776,40 @@ export class PdfPages implements BookPages {
     } finally {
       this.trace('pdf.render.exit', { page: index + 1, phase, outcome, ms: Math.round(performance.now() - t0) });
       if (!job) this.pending.delete(index);
-      // A preview job followed by a sharp job must keep the decoded scan.
-      // cleanup() here forced the sharp pass to decode the same page again,
-      // which is the multi-minute stall on the headset.
-      const keepDecoded =
-        outcome === 'ok' && !job?.cancelled && job?.phase === 'preview' && !this.isFresh(this.textures.get(index));
-      if (!keepDecoded) {
-        try {
-          page?.cleanup();
-        } catch {
-          /* the pixels are already on the canvas */
-        }
+      try {
+        page?.cleanup();
+      } catch {
+        /* the pixels are already on the canvas */
       }
     }
+  }
+
+  /**
+   * Call once a frame. A paint that doesn't return holds the only slot, so
+   * the loading square stays up and reopening the book starts another one
+   * on top of it. After 8s, cancel. After 12s, drop the slot anyway.
+   */
+  service(): void {
+    const job = this.busy;
+    if (!job) {
+      this.busySince = 0;
+      return;
+    }
+    if (this.busySince === 0) this.busySince = performance.now();
+    const age = performance.now() - this.busySince;
+    if (age < 8000) return;
+    if (!job.cancelled) {
+      this.trace('pdf.render.stall', { page: job.index + 1, phase: job.phase, ms: Math.round(age) });
+      this.cancelBusy();
+    }
+    if (age < 12000) return;
+    const index = job.index;
+    const strikes = (this.abandons.get(index) ?? 0) + 1;
+    this.abandons.set(index, strikes);
+    if (strikes >= 2) this.failed.add(index);
+    this.busy = null;
+    this.busySince = 0;
+    this.trace('pdf.render.abandon', { page: index + 1, phase: job.phase, ms: Math.round(age), strikes });
+    this.pump();
   }
 }

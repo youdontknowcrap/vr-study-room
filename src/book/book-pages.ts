@@ -35,6 +35,8 @@ export interface BookPages {
    */
   ready(index: number): boolean;
   keepAround(center: number): void;
+  /** Drop a paint that has stopped returning, so the next page can start. */
+  service?(): void;
   dispose(): void;
   getStats?(): PageStats;
 }

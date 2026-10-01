@@ -616,6 +616,7 @@ export class Book {
       this.shownRightT = this.blockT - this.shownLeftT;
       this.layout();
     }
+    this.pages?.service?.();
     this.syncPageWait(dt);
   }
 
