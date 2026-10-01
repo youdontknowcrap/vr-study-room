@@ -47,6 +47,15 @@ export class HandState {
   /** Where a grab happens: controller grip, or the pinch point between fingers. */
   readonly grabPoint = new Vector3();
 
+  /**
+   * Tracked-hand palm (see book/palm-frame.ts). Origin sits in the palm,
+   * +Z points out of it, +Y points toward the fingertips. Controllers leave
+   * this invalid and use the grip pose instead.
+   */
+  readonly palmPosition = new Vector3();
+  readonly palmQuaternion = new Quaternion();
+  palmValid = false;
+
   /** Pointing ray (controller laser / hand "pinch ray"), for far UI and grabs. */
   readonly rayOrigin = new Vector3();
   readonly rayDirection = new Vector3(0, 0, -1);

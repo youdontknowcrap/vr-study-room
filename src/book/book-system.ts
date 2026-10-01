@@ -6,9 +6,10 @@
  *   resting  - lying on the desk (or the floor). It stays exactly how it
  *              landed and is a CHILD of the desk top (or the room), so it
  *              moves along when you change desk height/tilt or Recenter.
- *   held     - in one of your hands. It keeps the pose it had relative to
- *              your hand when you grabbed it ("hand-relative"): turn your
- *              wrist and the book turns with it. No auto-facing your eyes.
+ *   held     - in one of your hands. A near grab keeps the pose the book
+ *              had relative to that hand. A far grab settles into the palm
+ *              (tracked hands) or just above the controller. Turn your hand
+ *              and the book turns with it. No auto-facing your eyes.
  *   falling  - you let go away from the desk: gravity, bounces, walls
  *              (see book-physics.ts).
  *   settling - a short glide into a resting pose (after landing, after a
@@ -73,12 +74,18 @@ const LOST_HAND_SECONDS = 0.6;
 /** Farther than this (m) from your seat -> Recenter also brings the book back. */
 const OUT_OF_REACH = 0.9;
 /**
- * Default pose of the book relative to your hand (grip space) when it flies
- * into your hand from afar: ~11 cm above the fist, page side toward you and
- * tilted up ~35 degrees. The sideways shift (x) is mirrored per hand so the
- * book sits toward your body's center. Tune these on the headset.
+ * Default pose when a CONTROLLER ray-grabs the book. Grip space: +Y is up
+ * off the fist, −Z runs along the barrel. ~11 cm above the fist, tilted up
+ * ~35 degrees. x is mirrored so the book sits toward the body's center.
  */
 const IN_HAND_OFFSET = { x: 0.06, y: 0.11, z: -0.02, tiltX: -0.6 };
+/**
+ * Default pose when a TRACKED HAND ray-grabs the book, in the palm frame
+ * (palm-frame.ts): +Y toward the fingertips, +Z out of the palm. A couple
+ * of centimeters out of the palm, shifted toward the thumb, tilted so the
+ * top of the page comes toward the eyes (−0.55 rad about X).
+ */
+const PALM_OFFSET = { x: 0.03, y: 0, z: 0.02, tiltX: -0.55 };
 
 type BookState =
   | { kind: 'resting'; on: 'desk' | 'floor' | 'table' }
@@ -363,6 +370,9 @@ export class BookSystem extends createSystem({}) {
     const p = book.toModel(hand.grabPoint, local);
     const nearSide = nearPageSide(p, sf, book.scale);
     if (nearSide !== 0) return { side: nearSide, x: p.x, byRay: false };
+    // Pinch/grip is on the cover, spine, or edge. The pointing ray would
+    // otherwise go through the hand and hit a page underneath.
+    if (this.isNear(hand, 0.01)) return null;
     if (!this.rayInModel(hand)) return null;
     const hit = rayPageHit(rayO, rayD, sf);
     if (!hit || hit.t * book.scale > RAY_GRAB_DISTANCE) return null;
@@ -408,12 +418,12 @@ export class BookSystem extends createSystem({}) {
     return true;
   }
 
-  /** Is the hand's grab point inside (or within a few cm of) the book's box? */
-  private isNear(hand: HandState): boolean {
+  /** Is the hand's grab point inside (or within `marginM` meters of) the book's box? */
+  private isNear(hand: HandState, marginM = NEAR_GRAB_MARGIN): boolean {
     const book = app.book;
     const hit = book.hitMesh;
     const p = book.toModel(hand.grabPoint, local).sub(hit.position);
-    const margin = NEAR_GRAB_MARGIN / book.scale; // world cm -> model units
+    const margin = marginM / book.scale; // world meters -> model units
     return (
       Math.abs(p.x) < hit.scale.x / 2 + margin &&
       Math.abs(p.y) < hit.scale.y / 2 + margin &&
@@ -447,6 +457,14 @@ export class BookSystem extends createSystem({}) {
       // offset = inverse(hand) * book  -> later: book = hand * offset
       this.handMatrix(hand, m1);
       offset.copy(m1).invert().multiply(root.matrixWorld);
+    } else if (hand.kind === 'hand' && hand.palmValid) {
+      // Right-hand thumb is −X in the palm frame, left-hand thumb is +X.
+      const side = h === 'right' ? -1 : 1;
+      offset.compose(
+        local.set(side * PALM_OFFSET.x, PALM_OFFSET.y, PALM_OFFSET.z),
+        quat.setFromEuler(new Euler(PALM_OFFSET.tiltX, 0, 0)),
+        ONE,
+      );
     } else {
       const side = h === 'left' ? 1 : -1;
       offset.compose(
@@ -489,8 +507,15 @@ export class BookSystem extends createSystem({}) {
     }
   }
 
-  /** World matrix of the hand's grip (palm) pose. */
+  /**
+   * World matrix the book is parented to. Tracked hands use the palm frame
+   * so a near grab pivots in the palm, not around the wrist. Controllers
+   * keep the grip pose.
+   */
   private handMatrix(hand: HandState, out: Matrix4): Matrix4 {
+    if (hand.kind === 'hand' && hand.palmValid) {
+      return out.compose(hand.palmPosition, hand.palmQuaternion, ONE);
+    }
     return out.compose(hand.gripPosition, hand.gripQuaternion, ONE);
   }
 

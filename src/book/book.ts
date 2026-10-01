@@ -45,7 +45,7 @@ import {
   type Texture,
   Vector3,
 } from '@iwsdk/core';
-import type { PdfPages } from './pdf-pages.js';
+import type { BookPages } from './book-pages.js';
 
 const PAGE_HEIGHT = 0.21; // meters (A5 height) at 100% size
 const TURN_SECONDS = 0.45;
@@ -87,7 +87,7 @@ export class Book {
   /** Called whenever the open spread changes (used to save reading progress). */
   onSpreadChange: (left: number) => void = () => {};
 
-  private pages: PdfPages | null = null;
+  private pages: BookPages | null = null;
   private left = -1;
   /** Book size multiplier (1 = 100%). */
   private size = 1;
@@ -291,7 +291,7 @@ export class Book {
   get pageCount(): number {
     return this.pages?.pageCount ?? 0;
   }
-  /** PdfPages.id of the open book ('' if none). */
+  /** Stable id of the open book ('' if none). */
   get bookId(): string {
     return this.pages?.id ?? '';
   }
@@ -372,7 +372,7 @@ export class Book {
    * Swap in a new PDF and play the "assemble into a book" animation.
    * `startLeft` = spread to open at (e.g. the saved reading position).
    */
-  setPages(pages: PdfPages, startLeft = -1): void {
+  setPages(pages: BookPages, startLeft = -1): void {
     this.pages?.dispose();
     this.pages = pages;
     this.left = this.validLeft(startLeft);

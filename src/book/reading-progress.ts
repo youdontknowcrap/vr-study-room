@@ -3,7 +3,7 @@
  *
  * Stored in localStorage as one small JSON object:
  *   { "fp:3f2a...": { "left": 41, "t": 1767225600000 }, ... }
- * The key is PdfPages.id (pdf.js fingerprint, or name + size + page count).
+ * The key is the open book's id (a PDF fingerprint, or a hash of the EPUB).
  * `left` is the page index shown on the left of the open spread (-1 = the
  * inside cover). `t` = when it was saved, so we can forget the oldest books
  * and the store never grows without limit.

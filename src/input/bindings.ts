@@ -94,10 +94,17 @@ export function isBound(action: ActionName, input: PhysicalInput): boolean {
  * easy: change a number, save, the page hot-reloads.
  */
 export const TUNING = {
-  /** Pinch starts when thumb and index tips are closer than this (meters). */
-  pinchStart: 0.018,
+  /**
+   * Pinch starts when thumb and index tips are closer than this (meters).
+   * Quest fingertip noise is a few millimeters, so 2.5 cm catches a real
+   * pinch that a tighter threshold drops. The browser's own pinch button,
+   * when it has one, is OR'd with this (see input-layer-system.ts).
+   */
+  pinchStart: 0.025,
   /** ...and ends when they separate past this. The gap ("hysteresis") stops flicker. */
-  pinchEnd: 0.035,
+  pinchEnd: 0.045,
+  /** Keep a pinch "down" this long after the fingertips vanish for a frame. */
+  pinchGrace: 0.16,
   /** Controller trigger/grip analog value that counts as pressed / released. */
   buttonPress: 0.6,
   buttonRelease: 0.4,

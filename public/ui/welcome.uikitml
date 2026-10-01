@@ -60,7 +60,7 @@
     <div class="heading">VR Study Room</div>
     <Divider></Divider>
     <div class="sub-heading">
-      A quiet desk, a book you can hold, and (soon) a whiteboard for math. Pick a PDF below, then enter VR.
+      A quiet desk, a book you can hold, and (soon) a whiteboard for math. Pick a PDF or EPUB below, then enter VR.
     </div>
   </div>
   <Button id="xr-button" class="button">

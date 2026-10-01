@@ -20,13 +20,14 @@
     "assets:sample-pdf": "python3 scripts/make-sample-pdf.py",
     "assets:ambience": "python3 scripts/make-ambience.py",
     "smoke": "node scripts/smoke-test.mjs",
-    "test:unit": "node --experimental-strip-types --no-warnings scripts/unit-page-grab.mjs"
+    "test:unit": "node --experimental-strip-types --no-warnings scripts/unit-page-grab.mjs && node --experimental-strip-types --no-warnings scripts/unit-palm-frame.mjs && node --experimental-strip-types --no-warnings scripts/unit-epub.mjs"
   },
   "dependencies": {
     "@iwsdk/core": "1.0.0-rc.2",
     "@pmndrs/uikit": "^1.0.74",
     "@pmndrs/uikit-horizon": "^1.0.74",
     "@pmndrs/uikit-lucide": "^1.0.74",
+    "fflate": "^0.8.3",
     "pdfjs-dist": "^6.3.289",
     "three": "npm:super-three@0.181.0"
   },

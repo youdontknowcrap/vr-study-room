@@ -6,13 +6,13 @@
  * elements do the actual picking; nothing is uploaded anywhere - files are
  * read locally in the browser.
  */
-import { app, loadPdf, loadSampleBook } from '../app.js';
+import { app, loadBookFile, loadSampleBook, type PickerKind } from '../app.js';
 
 export class LaunchOverlay {
   private readonly root = document.createElement('div');
   private readonly status = document.createElement('div');
   private readonly prompt = document.createElement('div');
-  private readonly pdfInput = document.createElement('input');
+  private readonly bookInput = document.createElement('input');
   private readonly musicInput = document.createElement('input');
 
   /**
@@ -22,19 +22,19 @@ export class LaunchOverlay {
    * recenter, see room/head-pose.ts).
    */
   constructor(private onMusicFiles: (files: FileList) => void) {
-    this.pdfInput.type = 'file';
-    this.pdfInput.accept = 'application/pdf,.pdf';
+    this.bookInput.type = 'file';
+    this.bookInput.accept = 'application/pdf,application/epub+zip,.pdf,.epub';
     this.musicInput.type = 'file';
     this.musicInput.accept = 'audio/*,.mp3';
     this.musicInput.multiple = true;
-    for (const i of [this.pdfInput, this.musicInput]) i.hidden = true;
+    for (const i of [this.bookInput, this.musicInput]) i.hidden = true;
 
-    this.pdfInput.addEventListener('change', async () => {
-      const file = this.pdfInput.files?.[0];
-      this.pdfInput.value = ''; // allow picking the same file again later
+    this.bookInput.addEventListener('change', async () => {
+      const file = this.bookInput.files?.[0];
+      this.bookInput.value = ''; // allow picking the same file again later
       if (!file) return;
       this.hidePrompt();
-      await loadPdf({ data: await file.arrayBuffer() }, file.name.replace(/\.pdf$/i, ''));
+      await loadBookFile(file);
     });
     this.musicInput.addEventListener('change', () => {
       const files = this.musicInput.files;
@@ -63,19 +63,19 @@ export class LaunchOverlay {
       </style>
       <h1>VR Study Room</h1>
       <div>
-        <button data-act="pdf">Open PDF…</button>
+        <button data-act="book">Open book…</button>
         <button data-act="sample">Sample book</button>
         <button data-act="music">Add music…</button>
         <button data-act="back">Bring book back</button>
       </div>`;
     this.prompt.className = 'prompt';
     this.status.className = 'status';
-    this.root.append(this.prompt, this.status, this.pdfInput, this.musicInput);
+    this.root.append(this.prompt, this.status, this.bookInput, this.musicInput);
     document.body.append(this.root);
 
     this.root.addEventListener('click', (e) => {
       const act = (e.target as HTMLElement).closest('button')?.dataset.act;
-      if (act === 'pdf') this.openPicker('pdf');
+      if (act === 'book') this.openPicker('book');
       if (act === 'music') this.openPicker('music');
       if (act === 'sample') void loadSampleBook();
       if (act === 'back') app.bookSystem?.bringBack();
@@ -87,16 +87,16 @@ export class LaunchOverlay {
   }
 
   /** Must be called from inside a click handler (browser rule for file dialogs). */
-  openPicker(kind: 'pdf' | 'music'): void {
-    (kind === 'pdf' ? this.pdfInput : this.musicInput).click();
+  openPicker(kind: PickerKind): void {
+    (kind === 'book' ? this.bookInput : this.musicInput).click();
   }
 
   /** Shown after leaving VR from the in-VR menu: one big button to tap. */
-  promptPicker(kind: 'pdf' | 'music'): void {
-    const what = kind === 'pdf' ? 'a PDF' : 'music files';
+  promptPicker(kind: PickerKind): void {
+    const what = kind === 'book' ? 'a PDF or EPUB' : 'music files';
     this.prompt.innerHTML = `Tap below to choose ${what}, then press <b>Enter VR</b> again.<br>`;
     const btn = document.createElement('button');
-    btn.textContent = kind === 'pdf' ? 'Choose PDF…' : 'Choose music…';
+    btn.textContent = kind === 'book' ? 'Choose book…' : 'Choose music…';
     btn.addEventListener('click', () => this.openPicker(kind));
     this.prompt.append(btn);
     this.prompt.style.display = 'block';

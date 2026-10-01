@@ -166,8 +166,8 @@ export class MenuSystem extends createSystem({}) {
       case 'close':
         this.toggle();
         break;
-      case 'pdf':
-        requestPicker('pdf');
+      case 'book':
+        requestPicker('book');
         break;
       case 'music-add':
         requestPicker('music');
@@ -247,7 +247,7 @@ export class MenuSystem extends createSystem({}) {
     const m = app.music;
     this.panel.setRows(
       [
-        [{ id: 'pdf', label: 'Open PDF… (leaves VR)' }],
+        [{ id: 'book', label: 'Open book… (leaves VR)' }],
         [
           { id: 'sample', label: 'Sample book' },
           { id: 'bring-back', label: 'Bring book back' },
