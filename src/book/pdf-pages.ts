@@ -333,12 +333,11 @@ export class PdfPages implements BookPages {
       if (this.busy?.index === index) return;
       this.wanted = [{ index, phase: 'sharp' }, ...this.wanted.filter((w) => w.index !== index)];
       this.pump();
-    } else {
-      // Old behaviour: start rendering immediately, in parallel with any
-      // other page. On a 17-megapixel scan, 4-6 of these at once is what
-      // freezes the Quest.
-      void this.renderPage(index, null);
     }
+    // Queue off used to call renderPage() here for every page at once.
+    // On a scanned book that stacks 1200px decodes on the main thread,
+    // the loading tile freezes, and reopening the book starts the pile again.
+    // keepAround() is the only place that starts those paints now.
   }
 
   /**
@@ -431,18 +430,21 @@ export class PdfPages implements BookPages {
             )
           : keep;
 
-      if (pdfRenderQueue.value) {
-        // [4 QUEUE] Old experiment: replace the wish list and cancel a render
-        // you've already flipped past.
-        this.wanted = warm
-          .filter((i) => !this.isFresh(this.textures.get(i)) && !(this.failed.has(i) && !this.textures.has(i)))
-          .map((i) => ({ index: i, phase: 'sharp' as Phase }));
-        if (this.busy && !warm.includes(this.busy.index)) this.cancelBusy();
-        this.pump();
-      } else {
-        for (const i of warm) this.get(i);
+      // One paint at a time. Previews of blank pages come first (open spread
+      // is at the front of `warm`), then sharp passes. A sharp pass used to
+      // run to completion before the other page on screen got any pixels.
+      const blanks: Wanted[] = [];
+      const sharps: Wanted[] = [];
+      for (const i of warm) {
+        if (this.failed.has(i) && !this.textures.has(i)) continue;
+        if (!this.textures.has(i)) blanks.push({ index: i, phase: 'preview' });
+        else if (!this.isFresh(this.textures.get(i))) sharps.push({ index: i, phase: 'sharp' });
       }
-      this.trace('pdf.keep', { center });
+      this.wanted = [...blanks, ...sharps];
+      if (this.busy && !warm.includes(this.busy.index)) this.cancelBusy();
+      else if (this.busy && !this.spreadHas(this.busy.index) && this.spreadNeedsPixels()) this.cancelBusy();
+      this.pump();
+      this.trace('pdf.keep', { center, queue: pdfRenderQueue.value, cache, preview: pdfPreview.value });
       return;
     }
 
@@ -454,7 +456,16 @@ export class PdfPages implements BookPages {
       this.cancelBusy();
     }
     this.pump();
-    this.trace('pdf.keep', { center });
+    this.trace('pdf.keep', { center, queue: pdfRenderQueue.value, cache, preview: pdfPreview.value });
+  }
+
+  /** The open pages have no pixels yet, so the loading tile is up. */
+  private spreadNeedsPixels(): boolean {
+    for (const i of [this.viewCenter - 1, this.viewCenter]) {
+      if (i < 0 || i >= this.pageCount) continue;
+      if (!this.textures.has(i) && !this.failed.has(i)) return true;
+    }
+    return false;
   }
 
   /** Heap, cache, and texture size attached to a streaming event. */
@@ -691,9 +702,10 @@ export class PdfPages implements BookPages {
         return;
       }
       if (job?.phase === 'sharp') {
-        // Old queue runs preview and sharp in this one job (one image decode).
-        // The wide window queues them separately, so this is usually a no-op.
-        if (pdfPreview.value && !this.textures.has(index)) {
+        // Show something before the 1200px pass. "Blurry 1st" off used to
+        // skip this, and the loading tile then sat there for the whole
+        // sharp decode. The wide window usually already published a preview.
+        if (!this.textures.has(index)) {
           const low = await this.paint(page, PREVIEW_PIXELS, job);
           if (stopped()) {
             if (low) low.width = low.height = 0;
@@ -717,7 +729,7 @@ export class PdfPages implements BookPages {
       }
       // [5 PREVIEW] Only when nothing is shown yet for this page: a quick
       // low-res pass so you see the page right away instead of blank paper.
-      if (pdfPreview.value && !this.textures.has(index)) {
+      if (!this.textures.has(index)) {
         const low = await this.paint(page, PREVIEW_PIXELS, job);
         if (stopped()) {
           if (low) low.width = low.height = 0;
@@ -758,10 +770,17 @@ export class PdfPages implements BookPages {
     } finally {
       this.trace('pdf.render.exit', { page: index + 1, phase, outcome, ms: Math.round(performance.now() - t0) });
       if (!job) this.pending.delete(index);
-      try {
-        page?.cleanup(); // drop decoded images now (big scans = big memory)
-      } catch {
-        /* the pixels are already on the canvas */
+      // A preview job followed by a sharp job must keep the decoded scan.
+      // cleanup() here forced the sharp pass to decode the same page again,
+      // which is the multi-minute stall on the headset.
+      const keepDecoded =
+        outcome === 'ok' && !job?.cancelled && job?.phase === 'preview' && !this.isFresh(this.textures.get(index));
+      if (!keepDecoded) {
+        try {
+          page?.cleanup();
+        } catch {
+          /* the pixels are already on the canvas */
+        }
       }
     }
   }
