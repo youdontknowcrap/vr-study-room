@@ -80,6 +80,11 @@ export class MenuPanel {
     this.draw();
   }
 
+  /** Change the big heading (e.g. "Big PDF" when showing that sub-page). */
+  setTitle(title: string): void {
+    this.title = title;
+  }
+
   /** Which button is at texture coordinate (u, v)? */
   buttonAtUV(u: number, v: number): string | null {
     const px = u * CANVAS_W;
@@ -116,7 +121,10 @@ export class MenuPanel {
       // "Value" buttons (the % / cm / degrees in the middle of a -/+ row)
       // get a different color so they read as a display (tap = reset).
       const isValue = b.id.endsWith('-reset');
-      g.fillStyle = b.id === this.hovered ? '#d9a55b' : isValue ? '#2f251e' : '#4a3a2e';
+      // Toggles whose label ends in ": On" get a green tint so you can see
+      // at a glance which Big PDF experiments are active.
+      const isOn = /: On$/.test(b.label);
+      g.fillStyle = b.id === this.hovered ? '#d9a55b' : isValue ? '#2f251e' : isOn ? '#3d5a36' : '#4a3a2e';
       g.fill();
       g.fillStyle = b.id === this.hovered ? '#1c1612' : '#f3e6cf';
       g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1, b.w - 12);

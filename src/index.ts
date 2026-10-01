@@ -12,7 +12,7 @@
  */
 import { World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
-import { app, loadSampleBook } from './app.js';
+import { app, hasPickedFile, loadSampleBook, reopenBook } from './app.js';
 import { Music } from './audio/music.js';
 import { Book } from './book/book.js';
 import { BookSystem } from './book/book-system.js';
@@ -20,9 +20,22 @@ import { saveProgress } from './book/reading-progress.js';
 import { InputLayerSystem } from './input/input-layer-system.js';
 import { MenuSystem } from './menu/menu-system.js';
 import { PanelSystem } from './panel.js';
+import { StatsSystem } from './perf/stats-system.js';
 import { createRoom } from './room/create-room.js';
 import { onRoomChange, switchRoom } from './room/room-switch.js';
-import { bookScale, deskHeight, deskTilt, roomChoice, roomQuality } from './settings.js';
+import {
+  bookScale,
+  deskHeight,
+  deskTilt,
+  pdfCacheSize,
+  pdfPreview,
+  pdfRenderQueue,
+  pdfResolution,
+  pdfStreaming,
+  perfStats,
+  roomChoice,
+  roomQuality,
+} from './settings.js';
 import { LaunchOverlay } from './ui2d/launch-overlay.js';
 
 World.create(
@@ -86,11 +99,38 @@ World.create(
   world.registerSystem(MenuSystem, { priority: 2 });
   world.registerSystem(BookSystem, { priority: 3 });
   world.registerSystem(PanelSystem); // welcome panel's Enter VR / Exit buttons
+  world.registerSystem(StatsSystem); // Big PDF stats readout (hidden unless toggled on)
+
+  // [1 STREAMING] only matters while a file is being opened, so when you flip
+  // it, reopen the picked file (you land on the same page: reading progress).
+  // The sample book is a normal URL and isn't affected. `first` skips the
+  // immediate call subscribe() makes.
+  let firstStreaming = true;
+  pdfStreaming.subscribe(() => {
+    if (firstStreaming) return void (firstStreaming = false);
+    if (hasPickedFile()) void reopenBook();
+  });
 
   // Entering VR counts as a gesture too; also unlock audio then.
   world.visibilityState.subscribe(() => app.music.unlock());
 
   // Handy for debugging in the browser console (and used by the smoke
   // test): window.app, window.settings.bookScale.value = 1.5, ...
-  Object.assign(window, { app, settings: { bookScale, deskHeight, deskTilt, roomChoice, roomQuality } });
+  Object.assign(window, {
+    app,
+    settings: {
+      bookScale,
+      deskHeight,
+      deskTilt,
+      roomChoice,
+      roomQuality,
+      // Big PDF toggles (scripts/test-bigpdf.mjs flips these).
+      pdfStreaming,
+      pdfResolution,
+      pdfCacheSize,
+      pdfRenderQueue,
+      pdfPreview,
+      perfStats,
+    },
+  });
 });
