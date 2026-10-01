@@ -179,7 +179,7 @@ const start = await page.evaluate(() => ({
   easel: window.app.notes.easel.root.position.toArray().map((v) => +v.toFixed(3)),
 }));
 console.log('start', start);
-check(start.room === 'Glass door', 'defaults to the glass-door (pool) room');
+check(start.room === 'Pool room', 'defaults to the glass-door (pool) room');
 
 // Seated head, looking a bit to the right toward the board.
 await page.evaluate(() => {
