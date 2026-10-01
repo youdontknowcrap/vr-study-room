@@ -20,6 +20,11 @@ import { textureBytes, type BookPages, type PageStats } from './book-pages.js';
 import { pagesAround, pdfKeepCount } from './page-window.js';
 import { pdfCacheSize, pdfPreview, pdfRenderQueue, pdfResolution, pdfStreaming } from '../settings.js';
 import { streamLog } from '../debug/stream-log.js';
+import { installXrPaintPump } from './xr-paint-pump.js';
+
+// pdf.js waits on window.requestAnimationFrame between paint slices.
+// Install the pump before the first page render so a VR session can drive it.
+installXrPaintPump();
 
 // pdf.js parses PDFs in a Web Worker so the render loop never stalls.
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -212,10 +217,12 @@ export class PdfPages implements BookPages {
   private wanted: Wanted[] = [];
   /** [4 QUEUE] The one render in flight. */
   private busy: Job | null = null;
-  /** performance.now() when `busy` started. Used to drop a paint that never returns. */
-  private busySince = 0;
-  /** How many times a page's paint was abandoned. Two strikes and we stop retrying it. */
-  private abandons = new Map<number, number>();
+  /**
+   * Seconds of real frames since a cancel was asked for and the paint has
+   * not returned. Headset sleep does not count: a paused Quest used to look
+   * like a multi-minute hang and the paint was thrown away.
+   */
+  private cancelAwake = 0;
   /** Right-hand page of the spread the reader is actually on. */
   private viewCenter = 0;
   /** Pages that must stay on the GPU for the current spread. */
@@ -322,6 +329,12 @@ export class PdfPages implements BookPages {
   ready(index: number): boolean {
     if (index < 0 || index >= this.pageCount) return true;
     return this.textures.has(index) || this.failed.has(index);
+  }
+
+  /** True once the page is at the current sharp size, or it isn't a real page. */
+  fresh(index: number): boolean {
+    if (index < 0 || index >= this.pageCount) return true;
+    return this.isFresh(this.textures.get(index)) || this.failed.has(index);
   }
 
   private request(index: number): void {
@@ -453,11 +466,18 @@ export class PdfPages implements BookPages {
       return;
     }
 
-    // Wide window: do NOT cancel a paint that is still inside it. Cancelling
-    // on every flip is why a big PDF never caught up and stayed white.
+    // Wide window: do NOT cancel a paint that is still inside it just because
+    // the reader flipped. Cancelling on every flip is why a big PDF never
+    // caught up. Do cancel a page that is not on the open spread when that
+    // spread still needs its sharp pass — a blurry neighbor must not hold
+    // the only slot while the page you're reading stays at 360 px.
     this.rebuildWanted();
     if (this.busy && !this.keep.has(this.busy.index)) this.cancelBusy();
-    else if (this.busy?.phase === 'sharp' && !this.spreadHas(this.busy.index) && this.spreadNeedsSharp()) {
+    else if (
+      this.busy &&
+      !this.spreadHas(this.busy.index) &&
+      (this.spreadNeedsPixels() || this.spreadNeedsSharp())
+    ) {
       this.cancelBusy();
     }
     this.pump();
@@ -579,7 +599,7 @@ export class PdfPages implements BookPages {
     if (!next) return;
     const job: Job = { index: next.index, phase: next.phase, task: null, cancelled: false };
     this.busy = job;
-    this.busySince = performance.now();
+    this.cancelAwake = 0;
     this.trace('pdf.pump', { page: next.index + 1, phase: next.phase });
     void this.renderPage(next.index, job).finally(() => {
       if (this.busy === job) this.busy = null;
@@ -708,10 +728,10 @@ export class PdfPages implements BookPages {
         return;
       }
       if (job?.phase === 'sharp') {
-        // Show something before the 1200px pass. "Blurry 1st" off used to
-        // skip this, and the loading tile then sat there for the whole
-        // sharp decode. The wide window usually already published a preview.
-        if (!this.textures.has(index)) {
+        // Off-screen pages get a 360 px preview first so a flip has ink.
+        // The open spread does not: a 360 px stand-in is what made the
+        // facing page look soft while its sharp pass waited.
+        if (!this.spreadHas(index) && !this.textures.has(index)) {
           const low = await this.paint(page, PREVIEW_PIXELS, job);
           if (stopped()) {
             if (low) low.width = low.height = 0;
@@ -785,31 +805,32 @@ export class PdfPages implements BookPages {
   }
 
   /**
-   * Call once a frame. A paint that doesn't return holds the only slot, so
-   * the loading square stays up and reopening the book starts another one
-   * on top of it. After 8s, cancel. After 12s, drop the slot anyway.
+   * Call once a frame with the frame delta in seconds. A slow scan is left
+   * alone: cancelling it at 8s threw the pixels away and the facing page
+   * stayed at 360 px with the loading square up. The only release is a
+   * cancel that already happened (the page left the window) and then never
+   * came back. Time the headset spent asleep does not count.
    */
-  service(): void {
+  service(dt = 0): void {
     const job = this.busy;
-    if (!job) {
-      this.busySince = 0;
+    if (!job || !job.cancelled) {
+      this.cancelAwake = 0;
       return;
     }
-    if (this.busySince === 0) this.busySince = performance.now();
-    const age = performance.now() - this.busySince;
-    if (age < 8000) return;
-    if (!job.cancelled) {
-      this.trace('pdf.render.stall', { page: job.index + 1, phase: job.phase, ms: Math.round(age) });
-      this.cancelBusy();
-    }
-    if (age < 12000) return;
+    if (dt > 0 && dt < 1) this.cancelAwake += dt;
+    if (this.cancelAwake < 15) return;
     const index = job.index;
-    const strikes = (this.abandons.get(index) ?? 0) + 1;
-    this.abandons.set(index, strikes);
-    if (strikes >= 2) this.failed.add(index);
+    const phase = job.phase;
     this.busy = null;
-    this.busySince = 0;
-    this.trace('pdf.render.abandon', { page: index + 1, phase: job.phase, ms: Math.round(age), strikes });
+    this.cancelAwake = 0;
+    if (
+      this.keep.has(index) &&
+      !this.failed.has(index) &&
+      !this.wanted.some((w) => w.index === index && w.phase === phase)
+    ) {
+      this.wanted.push({ index, phase });
+    }
+    this.trace('pdf.render.abandon', { page: index + 1, phase });
     this.pump();
   }
 }

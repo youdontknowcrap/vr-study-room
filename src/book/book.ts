@@ -169,7 +169,9 @@ export class Book {
     // the page face and not on the outside of the spine.
     this.halves.right.add(this.ribbon);
 
-    // Corner chip on the side that can't turn yet because that page is still painting.
+    // Corner chip only while that visible page is still the soft preview.
+    // A sharp page used to keep the chip because a neighbor hadn't painted,
+    // which read as the page itself stuck on Loading.
     const waitMat = () =>
       new MeshBasicMaterial({ map: this.loading.tex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     this.backWait = new Mesh(this.pageGeo, waitMat());
@@ -616,7 +618,7 @@ export class Book {
       this.shownRightT = this.blockT - this.shownLeftT;
       this.layout();
     }
-    this.pages?.service?.();
+    this.pages?.service?.(dt);
     this.syncPageWait(dt);
   }
 
@@ -669,23 +671,24 @@ export class Book {
     return this.pages.ready(index) ? null : this.loading.tex;
   }
 
-  /** True while this direction still has a page to turn onto, and it isn't painted yet. */
-  private directionWaiting(dir: TurnDir): boolean {
-    if (!this.pages || this.turn || this.assemble) return false;
-    const n = this.pageCount;
-    const inBook = dir === 1 ? this.left + 1 <= n - 1 : this.left >= 0;
-    if (!inBook) return false;
-    return !turnAllowed(this.left, n, dir, (i) => this.pages!.ready(i));
-  }
-
   private showsLoader(index: number): boolean {
     return !!this.pages && index >= 0 && index < this.pageCount && !this.pages.ready(index);
   }
 
-  /** Corner chip while the next flip is waiting, and a spin on any page that is still blank. */
+  /**
+   * Full-page spinner while a page has no pixels. The corner chip is only
+   * for a page that already has the soft preview and is waiting on the
+   * sharp pass. It is not a "you can't turn yet" mark: that mark sat on a
+   * finished page whenever the pages behind it were still queued.
+   */
   private syncPageWait(dt: number): void {
-    const back = this.directionWaiting(-1) && !this.showsLoader(this.left);
-    const fwd = this.directionWaiting(1) && !this.showsLoader(this.left + 1);
+    const soft = (index: number): boolean => {
+      if (!this.pages || this.showsLoader(index)) return false;
+      if (this.pages.fresh) return !this.pages.fresh(index);
+      return false;
+    };
+    const back = soft(this.left);
+    const fwd = soft(this.left + 1);
     this.backWait.visible = back;
     this.forwardWait.visible = fwd;
     const onPage =

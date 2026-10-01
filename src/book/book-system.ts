@@ -48,6 +48,7 @@ import {
 import { actions, type Handedness, type HandState, type PressSource } from '../input/actions.js';
 import { decidePress, isQuickTap, nearPageSide, rayDragX, rayPageHit } from './page-grab.js';
 import { noteFrame } from '../debug/stream-log.js';
+import { flushXrPaintPump, setXrPresenting } from './xr-paint-pump.js';
 import { app } from '../app.js';
 import { bookScale } from '../settings.js';
 import { getHeadPose } from '../room/head-pose.js';
@@ -242,6 +243,11 @@ export class BookSystem extends createSystem({}) {
 
   update(delta: number): void {
     noteFrame(delta);
+    // Drive pdf.js paint slices from this frame. Quest does not deliver
+    // window.requestAnimationFrame during an immersive session, so a page
+    // opened in VR otherwise waits until the session ends.
+    setXrPresenting(!!this.world.session);
+    flushXrPaintPump(performance.now());
     const book = app.book;
 
     // 1) Recenter: automatically when a VR session starts, or on request.

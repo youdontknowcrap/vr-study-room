@@ -34,9 +34,14 @@ export interface BookPages {
    * gave up, or the index isn't a real page (a cover).
    */
   ready(index: number): boolean;
+  /** True when this page is already at full reader resolution. */
+  fresh?(index: number): boolean;
   keepAround(center: number): void;
-  /** Drop a paint that has stopped returning, so the next page can start. */
-  service?(): void;
+  /**
+   * Release a cancelled paint that never came back. `dt` is the frame
+   * delta in seconds. A multi-second gap is a paused headset, not a hang.
+   */
+  service?(dt?: number): void;
   dispose(): void;
   getStats?(): PageStats;
 }
