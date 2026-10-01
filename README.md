@@ -1,9 +1,10 @@
 # VR Study Room
 
 A cozy virtual study room for Meta Quest, running in the browser (WebXR).
-You sit at a desk in a 360° room, hold a book made from any PDF, and turn
+You sit on the sofa in a sitcom apartment with a slanted
+reading stand on the coffee table, hold a book made from any PDF, and turn
 its pages with your hands, while your own music plays from a little radio
-on the desk. Coming next: a whiteboard where you write math with your
+on the table. (A built-in glass-door room with a pool view is the fallback.) Coming next: a whiteboard where you write math with your
 fingertip (ideally on your real desk), and exporting your notes as a PDF.
 
 Built with **Meta Immersive Web SDK (IWSDK) 1.0.0-rc.2** + three.js + Vite +
@@ -85,7 +86,7 @@ Plan to submit on **Nov 16–17**, not on the last morning.
       If the real-desk handwriting uses passthrough, the real desk must matter.
 - [ ] **Original / New Experience**: code written from Sep 24, 2026 on. ✔ (repo started Sep 28, 2026)
 - [ ] **English** UI and materials. ✔
-- [ ] **No third-party logos, brand names, branded products** anywhere (incl. panoramas). See ATTRIBUTION.md.
+- [ ] ~~No third-party logos/brands~~: Joey decided not to follow this rule (the sitcom apartment is the main room). Credits in ATTRIBUTION.md.
 - [ ] All third-party assets properly licensed → **ATTRIBUTION.md**.
 - [ ] Not a thin wrapper around another service.
 - [ ] Free, available until winner announcement (~Dec 11, 2026).
@@ -233,23 +234,40 @@ so you get real WebXR.
 ## 5. Controls
 
 All controls go through one input layer (`src/input/`). Physical inputs map
-to four actions — **grab**, **turnPage**, **toggleMenu**, **recenter** — in
-`src/input/bindings.ts`.
+to actions — **grab**, **select**, **turnPage**, **toggleMenu**,
+**recenter**, **bringBookBack** — in `src/input/bindings.ts`.
 
-| Action | Controllers (primary for now) | Hands (hands-first target) | Desktop |
+| Action | Controllers | Hands | Desktop |
 |---|---|---|---|
-| **Hold the book** | Book follows your *book hand* (menu → "Book: Left/Right hand") | Same, follows the palm | – |
-| Move the book (when "Book: On desk") | Grip or trigger near the spine/cover, or point at it and pull trigger | Pinch near the spine/cover | – |
-| **Turn page** | Thumbstick flick left/right (either hand) | Swipe your index finger sideways over the page (not the book hand) | ← / → keys |
-| **Drag a page** | With the *other* hand: grip/trigger on a page and pull it across (release past halfway = turn) | Pinch on a page and pull it across | – |
-| **Menu** | **B** or **Y** button | Poke or pinch the **☰ Menu** tab on the desk | **M** key, or click the tab |
+| **Pick up the book** | **Squeeze (grip)** near it, or point at it and squeeze (it flies to your hand). Trigger works too. | Pinch near it / point + pinch | – |
+| **Swap hands** | While holding, squeeze with the other hand on the book | Pinch with the other hand | – |
+| **Put it down** | Let go over/near the reading stand: it lands there, open and readable. Let go anywhere else: it falls (lands on the floor, table or sofa). | Same | – |
+| In your hand | It keeps the angle of your grip (no auto-facing). | Same | – |
+| **Turn page** | Thumbstick flick left/right (either hand) | Swipe over the page, or poke the page's outer edge | ← / → keys |
+| **Drag a page** | Trigger on a page edge and pull it across (release past halfway = turn) | Pinch on a page edge and pull | – |
+| **Menu** | **B** or **Y** button | Poke or pinch the **☰ Menu** tab on the stand | **M** key, or click the tab |
 | Press a menu button | Point + trigger (or grip) | Poke with index fingertip, or point + pinch | Mouse click |
 | **Recenter** | Click the thumbstick | Menu → Recenter | **R** key |
+| **Bring book back** | Menu → Bring book back (also automatic on Recenter if it's on the floor / out of reach) | Same | **B** key |
 
-Menu contents: Open PDF… (leaves VR) · Sample book · Book: Left hand / Right
-hand / On desk (saved in localStorage) · ◀ Page / Page ▶ · Room (cycles 8
-environments, saved) · Play/Pause · Next track · Volume −/+ · Add music…
-(leaves VR) · Recenter · Close.
+Menu contents: Open PDF… (leaves VR) · Sample book · Bring book back ·
+◀ Page / Page ▶ · **Size − / Book 100% / Size +** (60–200 %, 10 % steps) ·
+**Desk ▼ / 63 cm / Desk ▲** (2 cm steps, 45–95 cm above the floor) ·
+**Tilt − / 15° / Tilt +** (5° steps, 0–40°) · Play/Pause · Next track ·
+Volume −/+ · Add music… (leaves VR) · **Room: Apartment / Glass door** ·
+**Quality: High / Lite** · Recenter · Close. Tapping a middle "value"
+button resets it. All settings are saved in localStorage.
+
+**Rooms.** *Apartment* (default) is a 3D model; you sit on the sofa and the
+desk height/tilt controls move a **reading stand on the coffee table** (the
+furniture never moves). *Quality: High* = full-resolution textures (15.9 MB
+download); *Lite* = 512 px textures (3.8 MB) if High stutters. Only the
+selected one downloads. *Glass door* is the built-in fallback room (also used
+automatically if the model fails to load; `?room=glass` forces it).
+
+**Reading position is remembered** per PDF (localStorage): reopening the
+same file resumes there, and the red ribbon marks the page. The page blocks
+get thicker on the left / thinner on the right as you read.
 
 ### Opening PDFs and music — why it leaves VR
 
@@ -291,27 +309,40 @@ CC0). Browsers block audio until the first click/tap/Enter VR; that's normal.
 src/
   index.ts                 entry point: creates the World, builds objects, registers systems
   app.ts                   shared objects + loadPdf() + requestPicker() (exit VR for file dialogs)
-  settings.ts              book hand + environment, saved in localStorage (signals)
+  settings.ts              book size, desk height/tilt, room + quality (signals, localStorage)
   input/
     bindings.ts            ★ which physical input → which action (+ HANDS_ONLY switch, tuning)
     actions.ts             the per-frame action snapshot every system reads
     input-layer-system.ts  reads WebXR controllers/hands + keyboard → actions
   book/
-    pdf-pages.ts           pdf.js → small canvas textures, lazy + cached
-    book.ts                book meshes, page-turn hinge animation, drag, intro animation
-    book-system.ts         actions → book (hold in hand, move, drag/turn pages, recenter)
+    pdf-pages.ts           pdf.js → small canvas textures, lazy + cached; stable book id
+    book.ts                boxy book: covers, page blocks, spine, ribbon, page turns, intro
+    book-system.ts         grab / swap / drop / settle state machine, page drags, bring back
+    book-physics.ts        tiny rigid-body sim for a dropped book (gravity, bounce, walls)
+    reading-progress.ts    last-read page per book (localStorage)
   menu/
-    menu-panel.ts          canvas-drawn floating menu + desk "Menu" tab
+    menu-panel.ts          canvas-drawn floating menu + "Menu" tab
     menu-system.ts         open/close, ray/poke/mouse button presses
   audio/music.ts           playlist, <audio> → PositionalAudio on the radio
-  room/room.ts             desk, radio, anchors; recenter logic
-  room/environments.ts     8 Poly Haven 360° rooms via GroundedSkybox, lazy-loaded
-  ui2d/launch-overlay.ts   2D page card: Open PDF / Add music / book hand
+  room/
+    room-types.ts          ★ the StudyRoom "plug-in" contract (desk, seat, tables, bounds)
+    room-config.ts         ★ the sitcom apartment: scale, seat, table, stand (+ how measured)
+    create-room.ts         builds the chosen room (falls back to the glass-door room)
+    room-switch.ts         swaps rooms at runtime (menu "Room" / "Quality")
+    glb-room.ts            a room from a GLB model + reading stand + fourth wall/TV
+    reading-stand.ts       slanted stand that sits on a table (desk height/tilt)
+    procedural-room.ts     the glass-door room built from boxes
+    desk.ts                its drafting desk (floor-anchored, slanted)
+    outdoor-view.ts        pool photo seen through the glass door
+    head-pose.ts           live headset pose (fix for the "book vanished" bug)
+  ui2d/launch-overlay.ts   2D page card: Open PDF / Add music
   panel.ts                 IWSDK starter's welcome panel (Enter VR / Exit buttons)
 public/
+  models/apartment/*.glb    the sitcom apartment, High + Lite builds (CC BY 4.0, see ATTRIBUTION.md)
+  basis/                   KTX2 texture transcoder (from three.js)
+  textures/                glass-door room: pool photo + floor texture (CC0)
   books/sample-book.pdf    6-page self-made sample (CC0)
   audio/*.mp3              self-made ambience loops (CC0)
-  environments/*_2k.jpg    2048×1024 Poly Haven panoramas (CC0)
   scenes/, ui/             IWSDK authored scene + welcome panel
 scripts/                   asset generators + headless smoke test
 iwsdk.config.json          IWSDK project manifest (XR mode, hand tracking, emulator device)
@@ -384,8 +415,10 @@ Today: Mon Sep 28, 2026. Deadline: Wed Nov 18, 12:00 PM PT.
 | — | Nov 16 – 17 | **Submit** (buffer day) | Devpost submission complete; deployed URL re-tested on Quest |
 | — | Nov 18, 12:00 PM PT | Hard deadline | |
 
-Later / stretch: push notes to a Git repo; more environments or CC0 props
-(Poly Haven models, Kenney, Quaternius); UIKitML menus; wrist menu.
+Later / stretch: **book drop page-flutter physics** (pages flap while the
+book falls, instead of a rigid box); sofa/armchair as real colliders;
+texture atlas for the sitcom apartment (69 → ~10 draw calls); push notes to a
+Git repo; UIKitML menus; wrist menu.
 
 ---
 
@@ -411,8 +444,11 @@ Later / stretch: push notes to a Git repo; more environments or CC0 props
   starts reliably after Enter VR on Quest Browser).
 - **MP3 loop seam**: MP3 encoding adds a tiny gap at loop points of the
   ambience files. If audible, switch to OGG or decode into an AudioBuffer.
-- **Book-in-hand pose**: offsets in `book-system.ts → followHand()` are
-  first guesses; tune them on the device.
+- **Book-in-hand pose**: grab offsets in `book-system.ts` are first
+  guesses; tune them on the device.
+- **Sitcom apartment cost**: ~69 draw calls for the model (one per
+  material) + ~20 for the app. Quest 2 copes with ~100 at 72 Hz, but check
+  frame timing; if High stutters use *Quality: Lite*, or atlas the textures.
 
 ---
 

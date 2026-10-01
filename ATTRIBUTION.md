@@ -1,34 +1,45 @@
 # Attribution & asset licenses
 
 Every non-code asset in this repo, where it came from, and its license.
-Competition rule reminder: no third-party logos, brand names or branded
-products may appear in the project. All assets below are unbranded.
+(The old "no brands" competition rule no longer applies: Joey chose a sitcom
+apartment as the main room.)
 
-## Environments (360° photos) — Poly Haven, CC0 1.0
+## Environments (360°## Sitcom apartment (default room) — CC BY 4.0, attribution REQUIRED
+
+| | |
+|---|---|
+| Files | `public/models/apartment/apartment-high.glb`, `public/models/apartment/apartment-lite.glb` |
+| Title | **Sitcom Apartment** |
+| Author | original Sketchfab author (name omitted) |
+| Source | (source link omitted) |
+| License | **Creative Commons Attribution 4.0 (CC BY 4.0)**, https://creativecommons.org/licenses/by/4.0/ |
+| Obtained via | public GitHub repo (source repo omitted) (Sketchfab glTF export) |
+| Changes made | Converted spec-gloss materials to metal-rough, joined meshes per material, removed physical-material extensions, re-encoded textures as KTX2 (High: original resolution, UASTC; Lite: ≤512 px, ETC1S + UASTC normals). See `scripts/optimize-room-model.sh`. In code we add a plain "fourth wall" with a TV (the model, like the TV set, has none), a reading stand and a radio. |
+
+Credit line (in-app / store listing): *"Sitcom Apartment" by its original Sketchfab author
+(Sketchfab), licensed under CC BY 4.0. Modified (optimized for Quest).*
+
+## Glass-door room (fallback room) — Poly Haven, CC0 1.0
 
 Poly Haven assets are released under **CC0 1.0 Universal (public domain)**:
 <https://polyhaven.com/license>. Attribution is not required, but we credit
-the authors anyway. Files were made by downloading the "Tonemapped JPG"
-(8K, via `https://api.polyhaven.com/files/<id>` → `tonemapped.url`) and
-resizing to 2048×1024 JPG (quality 82) for Quest performance.
+the authors anyway.
 
-| File | Poly Haven asset | Author | Source URL | License |
-|---|---|---|---|---|
-| `public/environments/fireplace_2k.jpg` | Fireplace | Greg Zaal | https://polyhaven.com/a/fireplace | CC0 1.0 |
-| `public/environments/reading_room_2k.jpg` | Reading Room | Greg Zaal | https://polyhaven.com/a/reading_room | CC0 1.0 |
-| `public/environments/lythwood_lounge_2k.jpg` | Lythwood Lounge | Greg Zaal | https://polyhaven.com/a/lythwood_lounge | CC0 1.0 |
-| `public/environments/wooden_lounge_2k.jpg` | Wooden Lounge | Greg Zaal | https://polyhaven.com/a/wooden_lounge | CC0 1.0 |
-| `public/environments/pine_attic_2k.jpg` | Pine Attic | Sergej Majboroda | https://polyhaven.com/a/pine_attic | CC0 1.0 |
-| `public/environments/glasshouse_interior_2k.jpg` | Glasshouse Interior | Dario Barresi | https://polyhaven.com/a/glasshouse_interior | CC0 1.0 |
-| `public/environments/combination_room_2k.jpg` | Combination Room | Sergej Majboroda | https://polyhaven.com/a/combination_room | CC0 1.0 |
-| `public/environments/old_room_2k.jpg` | Old Room | Sergej Majboroda | https://polyhaven.com/a/old_room | CC0 1.0 |
+| File | Poly Haven asset | Author | Source URL | License | Changes |
+|---|---|---|---|---|---|
+| `public/textures/pool_2k.jpg` | Pool (HDRI) | Greg Zaal | https://polyhaven.com/a/pool | CC0 1.0 | Tonemapped JPG resized to 2048×1024, seen only through the glass door |
+| `public/textures/laminate_floor_02_512.jpg` | Laminate Floor 02 | Dario Barresi, Charlotte Baglioni | https://polyhaven.com/a/laminate_floor_02 | CC0 1.0 | Diffuse map resized to 512×512 |
 
-> Before submission: look at each panorama in the headset once more and
-> drop any where a real-world brand/logo is readable (e.g. on a TV or
-> appliance). The Fireplace photo has a small TV in the background — no
-> logo was visible at 2K, but double-check.
+The 8 old 360° room panoramas (Poly Haven, CC0) were removed together with
+the room switcher.
 
-## Audio — self-made, CC0 1.0
+## Other runtime files
+
+| File | Source | License |
+|---|---|---|
+| `public/basis/basis_transcoder.{js,wasm}` | Basis Universal transcoder, copied from `three/examples/jsm/libs/basis/` | Apache-2.0 (Binomial LLC) |
+
+ CC0 1.0
 
 | File | How it was made | License |
 |---|---|---|
@@ -46,9 +57,8 @@ are never uploaded or stored.
 
 ## 3D models
 
-None yet. The desk, book and radio are simple boxes/planes built in code.
-If props are added later, prefer CC0 sources (Poly Haven models, Kenney,
-Quaternius) and add a row here with the exact URL.
+Apart from the sitcom apartment (above), everything (desk, reading stand, book,
+radio, glass-door room, fourth wall + TV) is built from boxes in code.
 
 ## Code libraries (npm)
 
