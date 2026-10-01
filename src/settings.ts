@@ -7,6 +7,7 @@
  * stay in sync this way, and saving is just one more subscriber.
  */
 import { signal } from '@iwsdk/core';
+import { DEFAULT_PEN_COLOR, DEFAULT_PEN_SIZE_MM, PEN_COLORS, PEN_SIZES_MM } from './notes/notes-model.js';
 import {
   ROOM_CHOICES,
   ROOM_QUALITIES,
@@ -93,19 +94,47 @@ export function stepSetting(
 }
 
 /**
- * ROOM: "apartment" (the sitcom apartment, the default) or "glass" (the built-in
- * glass-door room, the fallback). The menu's Room button flips it.
+ * ROOM: "glass" (the built-in glass-door POOL room, the default since Phase 2
+ * because the whiteboard is tuned there) or "apartment" (the sitcom apartment).
+ * The menu's Room button flips it, and the choice is saved.
  */
+const DEFAULT_ROOM: RoomChoice = 'glass';
 function readRoom(): RoomChoice {
   try {
+    // One-time switch to the pool room for the whiteboard phase. WHY a
+    // "rev" key: the saved room is written on every launch (subscribe fires
+    // right away), so a headset that ever ran the app has 'apartment' stored and
+    // would never see a new default. This flips it ONCE; after that the menu's
+    // Room button is remembered as usual.
+    const revKey = 'vrStudyRoom.roomDefaultRev';
+    if (localStorage.getItem(revKey) !== '2') {
+      localStorage.setItem(revKey, '2');
+      return DEFAULT_ROOM;
+    }
     const raw = localStorage.getItem(KEY_ROOM) as RoomChoice | null;
-    return raw && ROOM_CHOICES.includes(raw) ? raw : 'apartment';
+    return raw && ROOM_CHOICES.includes(raw) ? raw : DEFAULT_ROOM;
   } catch {
-    return 'apartment';
+    return DEFAULT_ROOM;
   }
 }
 export const roomChoice = signal<RoomChoice>(readRoom());
 roomChoice.subscribe((v) => write(KEY_ROOM, v));
+
+// ---------------------------------------------------------------------------
+// WHITEBOARD MARKER (menu: "Marker color" swatches and "Size" circles)
+// ---------------------------------------------------------------------------
+
+/** Marker color as a CSS hex string, one of PEN_COLORS (unknown saved values fall back to black). */
+function readPenColor(): string {
+  try {
+    const raw = localStorage.getItem('vrStudyRoom.penColor');
+    return raw && PEN_COLORS.some((c) => c.hex === raw) ? raw : DEFAULT_PEN_COLOR;
+  } catch {
+    return DEFAULT_PEN_COLOR;
+  }
+}
+export const penColor = signal<string>(readPenColor());
+penColor.subscribe((v) => write('vrStudyRoom.penColor', v));
 
 /** QUALITY of model rooms: "high" (full-res textures, default) or "lite". */
 function readQuality(): RoomQuality {
@@ -179,6 +208,9 @@ export function stepLevel(sig: { value: number }, levels: readonly number[], dir
   const next = Math.min(levels.length - 1, Math.max(0, (i < 0 ? 0 : i) + dir));
   sig.value = levels[next];
 }
+
+/** Marker stroke RADIUS in millimeters, one of PEN_SIZES_MM. */
+export const penSizeMm = levelSignal('vrStudyRoom.penSizeMm', PEN_SIZES_MM, DEFAULT_PEN_SIZE_MM);
 
 /**
  * 1. STREAMING LOAD. On = pdf.js reads only the byte ranges it needs from the

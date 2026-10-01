@@ -235,6 +235,26 @@ export class BookSystem extends createSystem({}) {
     });
   }
 
+  /**
+   * For the whiteboard tools (NotesSystem runs BEFORE this system): would a
+   * grab press from `hand` go to the book? Near = hand at the book; rayDist
+   * = how far along the hand's ray the book is (null = ray misses it).
+   * Lets the marker/eraser and the book share the squeeze button fairly.
+   */
+  grabCandidate(hand: HandState): { near: boolean; rayDist: number | null } {
+    const near = this.isNear(hand);
+    if (!hand.rayValid) return { near, rayDist: null };
+    raycaster.set(hand.rayOrigin, hand.rayDirection);
+    raycaster.far = RAY_GRAB_DISTANCE;
+    const hit = raycaster.intersectObject(app.book.hitMesh, false)[0];
+    return { near, rayDist: hit ? hit.distance : null };
+  }
+
+  /** Which hand holds the book (null = none). Used to hide that controller. */
+  get holderHand(): Handedness | null {
+    return this.state.kind === 'held' ? this.state.hand : null;
+  }
+
   /** What the book is doing right now (for menus, tests, debugging). */
   get stateName(): string {
     const s = this.state;

@@ -10,6 +10,7 @@ import type { Music } from './audio/music.js';
 import type { Book } from './book/book.js';
 import type { BookSystem } from './book/book-system.js';
 import type { BookPages } from './book/book-pages.js';
+import type { NotesSystem } from './notes/notes-system.js';
 import { EpubPages, type EpubSource } from './book/epub-pages.js';
 import { PdfPages, type PdfSource } from './book/pdf-pages.js';
 import { loadProgress } from './book/reading-progress.js';
@@ -29,6 +30,8 @@ export const app = {
   music: null as unknown as Music,
   /** Set by BookSystem.init(); lets the menu call bringBack(). */
   bookSystem: null as unknown as BookSystem,
+  /** Set by NotesSystem.init(): whiteboard, marker, eraser (menu "Return" uses it). */
+  notes: null as NotesSystem | null,
   overlay: null as unknown as LaunchOverlay,
   /** Name + page count of the open PDF, shown in menus. */
   bookTitle: '',

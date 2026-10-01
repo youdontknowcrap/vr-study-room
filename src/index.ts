@@ -8,7 +8,8 @@
  *  2. We build our own objects in code: the room (walls, glass door, desk),
  *     the book, music, and the 2D launch overlay.
  *  3. We register our systems. Lower `priority` runs first each frame:
- *     input (reads devices) -> menu (may "consume" a press) -> book.
+ *     input (reads devices) -> menu (may "consume" a press) -> notes
+ *     (whiteboard tools) -> book.
  */
 import { World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
@@ -17,8 +18,10 @@ import { Music } from './audio/music.js';
 import { Book } from './book/book.js';
 import { BookSystem } from './book/book-system.js';
 import { saveProgress } from './book/reading-progress.js';
+import { actions } from './input/actions.js';
 import { InputLayerSystem } from './input/input-layer-system.js';
 import { MenuSystem } from './menu/menu-system.js';
+import { NotesSystem } from './notes/notes-system.js';
 import { PanelSystem } from './panel.js';
 import { StatsSystem } from './perf/stats-system.js';
 import { createRoom } from './room/create-room.js';
@@ -32,6 +35,8 @@ import {
   pdfRenderQueue,
   pdfResolution,
   pdfStreaming,
+  penColor,
+  penSizeMm,
   perfStats,
   roomChoice,
   roomQuality,
@@ -97,7 +102,10 @@ World.create(
   // --- Systems ---------------------------------------------------------
   world.registerSystem(InputLayerSystem, { priority: 1 });
   world.registerSystem(MenuSystem, { priority: 2 });
-  world.registerSystem(BookSystem, { priority: 3 });
+  // Notes (whiteboard, marker, eraser) runs BEFORE the book: a squeeze near
+  // the marker must pick up the marker, and the book must not also see it.
+  world.registerSystem(NotesSystem, { priority: 3 });
+  world.registerSystem(BookSystem, { priority: 4 });
   world.registerSystem(PanelSystem); // welcome panel's Enter VR / Exit buttons
   world.registerSystem(StatsSystem); // Big PDF stats readout (hidden unless toggled on)
 
@@ -118,6 +126,7 @@ World.create(
   // test): window.app, window.settings.bookScale.value = 1.5, ...
   Object.assign(window, {
     app,
+    actions, // per-frame input snapshot (scripts/smoke-notes.mjs reads grip poses)
     settings: {
       bookScale,
       deskHeight,
@@ -131,6 +140,8 @@ World.create(
       pdfRenderQueue,
       pdfPreview,
       perfStats,
+      penColor,
+      penSizeMm,
     },
   });
 });
