@@ -27,8 +27,8 @@ export interface MenuButton {
 }
 
 const CANVAS_W = 512;
-const CANVAS_H = 760;
-/** Physical size: 26 cm wide. Comfortable to read at ~45 cm. */
+const CANVAS_H = 864;
+/** Physical size: 26 cm wide (x 43.9 cm tall). Comfortable to read at ~50 cm. */
 const PANEL_W = 0.26;
 
 export class MenuPanel {
@@ -60,9 +60,9 @@ export class MenuPanel {
    */
   setRows(rows: { id: string; label: string }[][], status: string): void {
     const pad = 24;
-    const top = 92;
-    const rowH = 64;
-    const gap = 10;
+    const top = 88;
+    const rowH = 56;
+    const gap = 8;
     this.buttons = [];
     rows.forEach((row, r) => {
       const w = (CANVAS_W - pad * 2 - gap * (row.length - 1)) / row.length;
@@ -109,11 +109,14 @@ export class MenuPanel {
     g.textAlign = 'left';
     g.fillText(this.title, 24, 48);
 
-    g.font = '28px sans-serif';
+    g.font = '26px sans-serif';
     g.textAlign = 'center';
     for (const b of this.buttons) {
       roundRect(g, b.x, b.y, b.w, b.h, 14);
-      g.fillStyle = b.id === this.hovered ? '#d9a55b' : '#4a3a2e';
+      // "Value" buttons (the % / cm / degrees in the middle of a -/+ row)
+      // get a different color so they read as a display (tap = reset).
+      const isValue = b.id.endsWith('-reset');
+      g.fillStyle = b.id === this.hovered ? '#d9a55b' : isValue ? '#2f251e' : '#4a3a2e';
       g.fill();
       g.fillStyle = b.id === this.hovered ? '#1c1612' : '#f3e6cf';
       g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1, b.w - 12);

@@ -6,8 +6,7 @@
  * elements do the actual picking; nothing is uploaded anywhere - files are
  * read locally in the browser.
  */
-import { loadPdf, loadSampleBook } from '../app.js';
-import { bookHand, BOOK_HAND_LABEL, cycleBookHand } from '../settings.js';
+import { app, loadPdf, loadSampleBook } from '../app.js';
 
 export class LaunchOverlay {
   private readonly root = document.createElement('div');
@@ -16,6 +15,12 @@ export class LaunchOverlay {
   private readonly pdfInput = document.createElement('input');
   private readonly musicInput = document.createElement('input');
 
+  /**
+   * `onMusicFiles` only adds tracks to the music player. It must NEVER
+   * reload or move the book (that was the suspected cause of the "book
+   * vanishes after loading an MP3" bug; the real cause was the VR re-entry
+   * recenter, see room/head-pose.ts).
+   */
   constructor(private onMusicFiles: (files: FileList) => void) {
     this.pdfInput.type = 'file';
     this.pdfInput.accept = 'application/pdf,.pdf';
@@ -61,21 +66,19 @@ export class LaunchOverlay {
         <button data-act="pdf">Open PDF…</button>
         <button data-act="sample">Sample book</button>
         <button data-act="music">Add music…</button>
-        <button data-act="hand"></button>
+        <button data-act="back">Bring book back</button>
       </div>`;
     this.prompt.className = 'prompt';
     this.status.className = 'status';
     this.root.append(this.prompt, this.status, this.pdfInput, this.musicInput);
     document.body.append(this.root);
 
-    const handBtn = this.root.querySelector<HTMLButtonElement>('[data-act="hand"]')!;
-    bookHand.subscribe((h) => (handBtn.textContent = `Book: ${BOOK_HAND_LABEL[h]}`));
     this.root.addEventListener('click', (e) => {
       const act = (e.target as HTMLElement).closest('button')?.dataset.act;
       if (act === 'pdf') this.openPicker('pdf');
       if (act === 'music') this.openPicker('music');
       if (act === 'sample') void loadSampleBook();
-      if (act === 'hand') cycleBookHand();
+      if (act === 'back') app.bookSystem?.bringBack();
     });
   }
 

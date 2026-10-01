@@ -92,6 +92,17 @@ const bookSnapshot = () =>
   });
 
 console.log('XR round trip (Add music…):');
+// Emulated headset = a SEATED reader looking down ~30° at the table
+// (the emulator's default is a standing person looking at the horizon,
+// which can't see a coffee table 1 m below eye level).
+await page.evaluate(() => {
+  const d = window.IWER_DEVICE;
+  d.controlMode = 'programmatic';
+  const pitch = (-30 * Math.PI) / 180;
+  d.position.set(0, 1.1, 0);
+  d.quaternion.set(Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2));
+  d.notifyStateChange();
+});
 await page.evaluate(() => window.app.world.launchXR());
 await page.waitForTimeout(3000);
 await page.keyboard.press('ArrowRight');

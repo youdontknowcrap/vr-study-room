@@ -2,7 +2,8 @@
  * MenuSystem — opens/closes the floating menu and handles button presses.
  *
  * Ways to press a button (all go through the shared input actions):
- *  - Point a controller (or a hand's pinch-ray) at it and GRAB (trigger/pinch).
+ *  - Point a controller (or a hand's pinch-ray) at it and press trigger,
+ *    squeeze or pinch.
  *  - Poke it with your index fingertip (hand tracking).
  *  - Click it with the mouse (desktop browser).
  * Open/close: controller B/Y button, M key, or press the "☰ Menu" tab on the desk.
@@ -10,14 +11,18 @@
 import { createSystem, Raycaster, Vector2, Vector3, type Intersection } from '@iwsdk/core';
 import { actions, type HandState } from '../input/actions.js';
 import { app, loadSampleBook, requestPicker } from '../app.js';
-import { ENVIRONMENTS } from '../room/environments.js';
 import {
-  bookHand,
-  BOOK_HAND_LABEL,
-  cycleBookHand,
-  cycleEnvironment,
-  environmentId,
+  BOOK_SCALE,
+  bookScale,
+  DESK_HEIGHT,
+  DESK_TILT,
+  deskHeight,
+  deskTilt,
+  stepSetting,
+  roomChoice,
+  roomQuality,
 } from '../settings.js';
+import { onRoomChange } from '../room/room-switch.js';
 import { createMenuTab, MenuPanel } from './menu-panel.js';
 
 const raycaster = new Raycaster();
@@ -36,13 +41,20 @@ export class MenuSystem extends createSystem({}) {
     this.panel = new MenuPanel();
     this.world.scene.add(this.panel.mesh);
     this.tab = createMenuTab();
-    app.room.menuTabAnchor.add(this.tab);
+    app.room.desk.menuTabAnchor.add(this.tab);
+    // Room swapped (menu "Room"): move the tab onto the new desk/stand.
+    onRoomChange((room) => {
+      room.desk.menuTabAnchor.add(this.tab);
+      this.dirty = true; // the Room button shows the room's name
+    });
 
     // Rebuild the labels whenever something they show changes.
     const markDirty = () => (this.dirty = true);
     this.cleanupFuncs.push(
-      bookHand.subscribe(markDirty),
-      environmentId.subscribe(markDirty),
+      bookScale.subscribe(markDirty),
+      deskHeight.subscribe(markDirty),
+      deskTilt.subscribe(markDirty),
+      roomQuality.subscribe(markDirty),
       app.music.playing.subscribe(markDirty),
       app.music.index.subscribe(markDirty),
       app.music.volume.subscribe(markDirty),
@@ -88,14 +100,15 @@ export class MenuSystem extends createSystem({}) {
       this.panel.mesh.visible = false;
       return;
     }
-    // Place it ~45 cm in front of your eyes, a bit low, facing you: inside
+    // Place it ~50 cm in front of your eyes, a bit low, facing you: inside
     // the comfortable field of view, within arm's reach for poking.
+    // (world.camera is one frame old here - fine for placing a menu.)
     const cam = this.world.camera;
     cam.getWorldPosition(headPos);
     tmp.set(0, 0, -1).transformDirection(cam.matrixWorld);
     tmp.y = 0;
     tmp.normalize();
-    this.panel.mesh.position.copy(headPos).addScaledVector(tmp, 0.45);
+    this.panel.mesh.position.copy(headPos).addScaledVector(tmp, 0.5);
     this.panel.mesh.position.y -= 0.12;
     this.panel.mesh.lookAt(headPos);
     this.panel.mesh.visible = true;
@@ -120,7 +133,7 @@ export class MenuSystem extends createSystem({}) {
     raycaster.far = 2;
     const id = this.hitTest();
     if (id && hand.grab.pressed && !hand.grab.consumed) {
-      hand.grab.consumed = true; // don't also grab the book
+      hand.consumePress(); // don't also grab the book behind the menu
       this.press(id);
     }
     return id;
@@ -162,11 +175,36 @@ export class MenuSystem extends createSystem({}) {
       case 'sample':
         void loadSampleBook();
         break;
-      case 'hand':
-        cycleBookHand();
+      case 'bring-back':
+        app.bookSystem.bringBack();
         break;
-      case 'env':
-        cycleEnvironment();
+      // Book size / desk height / desk tilt: - and + step, the value resets.
+      case 'size-down':
+        stepSetting(bookScale, BOOK_SCALE, -1);
+        break;
+      case 'size-up':
+        stepSetting(bookScale, BOOK_SCALE, 1);
+        break;
+      case 'size-reset':
+        bookScale.value = BOOK_SCALE.default;
+        break;
+      case 'desk-down':
+        stepSetting(deskHeight, DESK_HEIGHT, -1);
+        break;
+      case 'desk-up':
+        stepSetting(deskHeight, DESK_HEIGHT, 1);
+        break;
+      case 'desk-reset':
+        deskHeight.value = DESK_HEIGHT.default;
+        break;
+      case 'tilt-down':
+        stepSetting(deskTilt, DESK_TILT, -1);
+        break;
+      case 'tilt-up':
+        stepSetting(deskTilt, DESK_TILT, 1);
+        break;
+      case 'tilt-reset':
+        deskTilt.value = DESK_TILT.default;
         break;
       case 'play':
         m.unlock();
@@ -181,6 +219,14 @@ export class MenuSystem extends createSystem({}) {
         break;
       case 'vol-up':
         m.changeVolume(0.1);
+        break;
+      case 'room':
+        // Flip between the two rooms; index.ts swaps the room when it changes.
+        roomChoice.value = roomChoice.value === 'apartment' ? 'glass' : 'apartment';
+        break;
+      case 'quality':
+        // High <-> Lite textures for model rooms (only that file downloads).
+        roomQuality.value = roomQuality.value === 'high' ? 'lite' : 'high';
         break;
       case 'recenter':
         actions.recenter = true; // BookSystem picks this up this frame
@@ -204,13 +250,28 @@ export class MenuSystem extends createSystem({}) {
         [{ id: 'pdf', label: 'Open PDF… (leaves VR)' }],
         [
           { id: 'sample', label: 'Sample book' },
-          { id: 'hand', label: `Book: ${BOOK_HAND_LABEL[bookHand.value]}` },
+          { id: 'bring-back', label: 'Bring book back' },
         ],
         [
           { id: 'prev-page', label: '◀ Page' },
           { id: 'next-page', label: 'Page ▶' },
         ],
-        [{ id: 'env', label: `Room: ${ENVIRONMENTS[environmentId.value].label}` }],
+        // Three-button rows: [ - ] [ current value (tap = reset) ] [ + ]
+        [
+          { id: 'size-down', label: 'Size −' },
+          { id: 'size-reset', label: `Book ${Math.round(bookScale.value * 100)}%` },
+          { id: 'size-up', label: 'Size +' },
+        ],
+        [
+          { id: 'desk-down', label: 'Desk ▼' },
+          { id: 'desk-reset', label: `${Math.round(deskHeight.value * 100)} cm` },
+          { id: 'desk-up', label: 'Desk ▲' },
+        ],
+        [
+          { id: 'tilt-down', label: 'Tilt −' },
+          { id: 'tilt-reset', label: `Tilt ${Math.round(deskTilt.value)}°` },
+          { id: 'tilt-up', label: 'Tilt +' },
+        ],
         [
           { id: 'play', label: m.playing.value ? '❚❚ Pause' : '▶ Play' },
           { id: 'next', label: 'Next ▶▶' },
@@ -220,6 +281,10 @@ export class MenuSystem extends createSystem({}) {
           { id: 'vol-up', label: `Vol + (${Math.round(m.volume.value * 100)}%)` },
         ],
         [{ id: 'music-add', label: 'Add music… (leaves VR)' }],
+        [
+          { id: 'room', label: `Room: ${app.room.name} ⇄` },
+          { id: 'quality', label: `Quality: ${roomQuality.value === 'high' ? 'High' : 'Lite'}` },
+        ],
         [
           { id: 'recenter', label: 'Recenter' },
           { id: 'close', label: 'Close' },
