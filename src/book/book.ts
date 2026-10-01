@@ -435,6 +435,16 @@ export class Book {
     this.turn.target = this.leafP > 0.5 ? 1 : 0;
   }
 
+  /**
+   * Let go of a dragged page and turn it all the way, no matter where it is
+   * (a quick trigger TAP on a page = flip, see page-grab.ts).
+   */
+  completeDrag(): void {
+    if (!this.turn?.dragging) return;
+    this.turn.dragging = false;
+    this.turn.target = this.turn.dir === 1 ? 1 : 0;
+  }
+
   get isDragging(): boolean {
     return this.turn?.dragging ?? false;
   }

@@ -50,10 +50,16 @@ export type ActionName =
 export const HANDS_ONLY = false;
 
 const ALL_BINDINGS: Record<ActionName, PhysicalInput[]> = {
-  // grab = pick up / hold / swap the book (squeeze is the main one), or
-  // press a menu button. Trigger + pinch are kept as alternatives.
+  // grab = pick up / hold the book, or press a menu button. Squeeze is the
+  // main one. Trigger + pinch also pick the book up, but ONLY when it is not
+  // held and you aim at its cover/spine/edge (on a page they grab the page).
+  // Swapping the book to the other hand is SQUEEZE ONLY: while one hand
+  // holds the book, the other hand's trigger/pinch grabs pages instead.
+  // (Rules + unit tests: src/book/page-grab.ts, scripts/unit-page-grab.mjs.)
   grab: ['controller.squeeze', 'controller.trigger', 'hand.pinch'],
-  // select = drag a page by its outer edge, press a menu button.
+  // select = grab a page (hand at it, or ray aimed at it) and drag it around
+  // the spine: right page forward, left page back; let go past halfway to
+  // turn; a quick tap flips. Also presses menu buttons.
   // Deliberately NOT squeeze: squeezing the book should always grab it.
   select: ['controller.trigger', 'hand.pinch'],
   // turnPage = +1 next page / -1 previous page
