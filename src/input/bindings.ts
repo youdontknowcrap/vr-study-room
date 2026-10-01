@@ -8,9 +8,8 @@
  * pinching?". It only asks "is the user GRABBING?" or "did they ask to TURN
  * THE PAGE?". Those are *actions*. This file maps physical inputs -> actions.
  *
- * Today (first demo) controllers are the primary input, with hand tracking
- * wired in as a bonus. The competition requires HANDS-FIRST by submission,
- * so the plan is:
+ * Controllers are the primary input today, with hand tracking wired in
+ * alongside. To make the app hands-first:
  *   1. Tune the hand entries below until they feel as good as controllers.
  *   2. Flip HANDS_ONLY to true (or delete the 'controller.*' entries).
  *   3. Nothing else in the app has to change.
@@ -44,7 +43,7 @@ export type ActionName =
   | 'bringBookBack';
 
 /**
- * Set this to true to rehearse the hands-only competition build:
+ * Set this to true to try a hands-only build:
  * all 'controller.*' bindings are ignored.
  */
 export const HANDS_ONLY = false;

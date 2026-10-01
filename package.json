@@ -1,6 +1,7 @@
 {
   "name": "vr-study-room",
   "version": "0.1.0",
+  "description": "A cozy WebXR study room for Quest: read PDFs and EPUBs as a real book, take whiteboard notes, bring your own rooms.",
   "private": true,
   "type": "module",
   "scripts": {

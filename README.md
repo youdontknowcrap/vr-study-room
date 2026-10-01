@@ -1,139 +1,85 @@
 # VR Study Room
 
-A cozy virtual study room for Meta Quest, running in the browser (WebXR).
-You sit at a slanted reading desk in a room with a sliding glass door onto
-a backyard pool (the built-in **Pool room**), or in **your own 3D room**
-(see [Custom scenes](#custom-scenes-your-own-rooms)). You hold a book made
-from any PDF and turn its pages with your hands, while your own music plays
-from a little radio on the desk. Coming next: a whiteboard where you write math with your
-fingertip (ideally on your real desk), and exporting your notes as a PDF.
+A cozy study room for Meta Quest that runs right in the browser (WebXR).
+Sit down at a slanted reading desk, pick up a real-feeling 3D book made from
+any **PDF or EPUB**, turn its pages with your hands, put on some music or
+rain, and work things out on a whiteboard next to you. When you're done,
+export your notes as a PDF.
+
+It's a personal, open source project: no accounts, no servers, no tracking.
+Your books, music and notes stay on your headset.
 
 Built with **Meta Immersive Web SDK (IWSDK) 1.0.0-rc.2** + three.js + Vite +
-TypeScript, scaffolded with the official `npm create @iwsdk@latest`.
+TypeScript.
 
-> This is Joey's entry for the **Meta VR Start Developer Competition 2026**,
-> Productivity track, New Experience division.
+## Features
+
+- **Read PDFs and EPUBs as a 3D book.** Hold it in either hand, set it on
+  the reading stand, grab a page and turn it, or flick the thumbstick. A
+  ribbon bookmark remembers where you stopped in every book.
+- **Big PDFs stream in.** Pages render one at a time in a small sliding
+  window with a quick blurry preview first, so even a 1,000-page scanned
+  book stays smooth on a Quest 2 (menu → *Big PDF ▸*, see
+  [TESTING-BIG-PDF.md](TESTING-BIG-PDF.md)).
+- **Music and ambience.** Bring your own MP3s or use the built-in fireplace
+  and rain loops. They play from a little radio on the desk, in spatial audio.
+- **Whiteboard notes.** A whiteboard on an easel with a marker (8 colors,
+  5 sizes) and an eraser. Multiple pages, portrait or landscape, save/load,
+  autosave, and **Export PDF** (one US Letter page per board page).
+- **Custom scenes.** The built-in *Pool room* (a sliding glass door onto a
+  backyard pool) is the default. Drop your own 3D rooms into `scenes/` and
+  read wherever you like. See [Custom scenes](#custom-scenes-your-own-rooms).
+- **Comfortable, seated, adjustable.** Book size, desk height and tilt are
+  all in the menu and remembered. Controllers and hand tracking both work.
+
+---
+
+## Quick start
+
+You need **git**, **Node.js 22** (or 20.19+ / 24+) and, for the headset,
+**adb**. No gaming GPU needed: on the computer the app runs in an emulator
+inside Chrome, and the real rendering happens on the Quest.
+
+```bash
+# Linux (Debian/Ubuntu/Mint):  sudo apt install -y git curl android-tools-adb
+# macOS (Homebrew):            brew install git node@22 android-platform-tools
+# Node via nvm (any OS):       https://github.com/nvm-sh/nvm, then `nvm install 22`
+
+git clone https://github.com/youdontknowcrap/vr-study-room.git
+cd vr-study-room
+nvm use            # optional: picks the version pinned in .nvmrc
+npm install
+
+npm run dev        # opens https://localhost:8081 with a fake Quest (IWER emulator)
+```
+
+Then on a **Quest** (Developer Mode on, see [§3](#3-on-the-quest)):
+
+```bash
+npm run dev:usb    # USB cable: open http://localhost:8081 in Quest Browser
+# or
+npm run dev:lan    # same Wi-Fi: open the https://192.168.x.y:8081 address Vite prints
+```
+
+Tap **Enter VR** and you're in.
 
 ---
 
 ## Contents
 
-1. [The competition: key facts & rule checklist](#1-the-competition)
-2. [Laptop setup (Linux Mint)](#2-laptop-setup-linux-mint)
-3. [Running on the laptop (emulator)](#3-running-on-the-laptop-emulator)
-4. [Quest 2 setup & testing on the headset](#4-quest-2-setup--testing-on-the-headset)
-5. [Controls](#5-controls)
-6. [How the demo works / project structure](#6-how-the-demo-works--project-structure)
-7. [Deploying (hosted link for judges)](#7-deploying-hosted-link-for-judges)
-8. [Roadmap & calendar](#8-roadmap--calendar)
-9. [Known risks](#9-known-risks)
-10. [Troubleshooting](#10-troubleshooting)
+1. [Running on your computer (emulator)](#1-running-on-your-computer-emulator)
+2. [Scripts](#2-scripts)
+3. [On the Quest](#3-on-the-quest)
+4. [Controls](#4-controls)
+5. [How it works / project structure](#5-how-it-works--project-structure)
+6. [Hosting your own copy](#6-hosting-your-own-copy)
+7. [Ideas and known limitations](#7-ideas-and-known-limitations)
+8. [Troubleshooting](#8-troubleshooting)
+9. [Credits and attribution](#9-credits-and-attribution)
 
 ---
 
-## 1. The competition
-
-Rules: <https://start-developer-competition-26.devpost.com/rules>
-(read them yourself too — they are the contract).
-
-### Key dates (all Pacific Time)
-
-| What | When |
-|---|---|
-| Entry period opens | Thu **Sep 24, 2026**, 10:00 AM PT |
-| **Submission deadline** | Wed **Nov 18, 2026, 12:00 PM (noon) PT** |
-| Judging | ~Nov 18 – ~Dec 9, 2026 |
-| Winners announced | ~**Dec 11, 2026** — the hosted app must stay online & free until then |
-| Joey away (Mexico) | Oct 18 – Oct 26 (no dev time) |
-
-Plan to submit on **Nov 16–17**, not on the last morning.
-
-### What to submit (IWSDK / WebXR entries)
-
-- [ ] A **link** judges can open in Meta Quest Browser (GitHub Pages, Vercel, …).
-- [ ] A **demo video < 3 min**, filmed on a Quest (or an emulator), uploaded
-      **public** to YouTube or Vimeo. Show real footage, lead with what's unique.
-- [ ] **Devpost text**: inspiration, how it was built, future plans, target launch date.
-- [ ] Pick **Track = Productivity**, **Division = New Experience**.
-
-### Before you can submit
-
-1. **Meta developer account with Developer Access** (see §4.1).
-2. **Join the Meta VR Start program** (must be a member *by submission*):
-   - Program info: <https://developers.meta.com/horizon/resources/meta-start-developer-program/>
-   - Apply: <https://developers.meta.com/horizon/programs/start/apply/> — sign in
-     with your Meta developer account, fill in the form, wait for approval
-     (reviewed on a rolling basis, so apply **now**).
-3. **Register on Devpost**: open <https://start-developer-competition-26.devpost.com/>,
-   click **Join Hackathon**, create/log in to a Devpost account.
-
-### Rule checklist (keep this green)
-
-- [ ] **HANDS-FIRST (required).** The whole experience must work *without ever
-      pairing a controller*. Controllers are an optional extra.
-      → Current build is controller-first on purpose (faster to iterate); see
-      milestone M4 "fade out controllers → hands-only pass". Flip
-      `HANDS_ONLY = true` in `src/input/bindings.ts` to rehearse.
-- [ ] **Seated-optimized.** Every interaction within ~2 ft (60 cm) radius
-      ("airplane seat test"). → Desk, book, radio and menu all sit within reach; auto-recenter on Enter VR.
-- [ ] **Fast cold start, clean pause/resume, satisfying in ≤10 min** ("one bus stop test").
-      → Watch bundle size (currently ~1.8 MB gzipped JS; see §9).
-- [ ] **≥ 60 fps on Meta Quest hardware** (judges likely use Quest 3/3S;
-      aim for 72 fps on Quest 2).
-- [ ] **FoV-aware UI.** Essential UI stays in a narrow, comfortable field of
-      view (think Meta VR Glasses' narrower FoV). → Menu opens 45 cm in front, slightly low.
-      Test with emulator device `metaVRGlasses` later.
-- [ ] **Passthrough only if purposeful.** This build is fully immersive (no passthrough).
-      If the real-desk handwriting uses passthrough, the real desk must matter.
-- [ ] **Original / New Experience**: code written from Sep 24, 2026 on. ✔ (repo started Sep 28, 2026)
-- [ ] **English** UI and materials. ✔
-- [ ] **No third-party logos/brands** in the repo: the shipped Pool room is CC0, and third-party room models live only in the local, gitignored `scenes/` folder.
-- [ ] All third-party assets properly licensed → **ATTRIBUTION.md**.
-- [ ] Not a thin wrapper around another service.
-- [ ] Free, available until winner announcement (~Dec 11, 2026).
-- [ ] You are a **Meta VR Start member** when you submit.
-
----
-
-## 2. Laptop setup (Linux Mint)
-
-No gaming GPU is needed: the emulator runs in Chrome/Chromium, and the
-real rendering happens on the Quest.
-
-```bash
-# 1. Basics
-sudo apt update
-sudo apt install -y git curl android-tools-adb
-
-# 2. Node.js LTS via nvm (Node Version Manager)
-#    Check https://github.com/nvm-sh/nvm for the latest install line (verify version number).
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.8/install.sh | bash
-# close and reopen the terminal, then:
-nvm install 22        # this repo pins 22.12.0 in .nvmrc; `nvm use` picks it up
-nvm use
-node -v               # should print v22.x
-
-# 3. GitHub CLI (gh). Official apt repo instructions:
-#    https://github.com/cli/cli/blob/trunk/docs/install_linux.md
-#    (Mint is Ubuntu-based, so the Debian/Ubuntu steps apply.)
-gh auth login          # choose GitHub.com, HTTPS, log in with browser
-
-# 4. Get the code (private repo — you must be logged in with gh)
-gh repo clone youdontknowcrap/vr-study-room
-cd vr-study-room
-npm install
-
-# 5. A browser for the emulator: Chrome or Chromium
-#    (Chromium: sudo apt install chromium  — package name may differ on Mint, verify)
-```
-
-`adb` alternative: Google's "SDK Platform-Tools" zip
-(<https://developer.android.com/tools/releases/platform-tools>) if the
-apt version is too old to see the headset.
-
----
-
-## 3. Running on the laptop (emulator)
+## 1. Running on your computer (emulator)
 
 ```bash
 npm run dev
@@ -157,7 +103,7 @@ certificate warning once).
   - Full emulator controls: <https://iwsdk.dev/guides/02-testing-experience.html#iwer-controls>
 - `npm run dev:status` shows the URL; `npm run dev:down` stops a background session.
 
-Other useful scripts:
+## 2. Scripts
 
 | Script | What it does |
 |---|---|
@@ -167,12 +113,15 @@ Other useful scripts:
 | `npm run smoke` | Headless Chrome check (needs `npm run dev:runtime` running and `npm i --no-save playwright-core`); saves `smoke.png` |
 | `npm run smoke:notes` | Headless whiteboard check: grab marker, draw, erase, add page, export PDF (page count + letter size), save/load, Return, autosave restore. Tip: `IWSDK_DEV_OPEN=false npm run dev:runtime` skips the extra managed browser. |
 | `npm run assets:sample-pdf` / `assets:ambience` | Regenerate the bundled CC0 sample PDF / audio loops |
+| `npm run test:unit` | Unit tests (page grabs, palm frame, EPUB, page window, scene manifests, notes) |
+| `npm run test:bigpdf` | Headless big-PDF measurements, see [TESTING-BIG-PDF.md](TESTING-BIG-PDF.md) |
+| `npm run dev:usb` / `dev:lan` | Dev server for the headset over USB (adb reverse) or Wi-Fi |
 
 ---
 
-## 4. Quest 2 setup & testing on the headset
+## 3. On the Quest
 
-### 4.1 One-time setup
+### 3.1 One-time setup
 
 1. **Meta developer account + team/organization.** Sign up at
    <https://developers.meta.com/horizon/> and create (or join) a developer
@@ -189,15 +138,15 @@ Other useful scripts:
    Hand and body tracking** → turn on hand tracking and **auto-switch
    between hands and controllers**. *(verify: exact menu names change
    between Quest OS versions.)*
-4. **USB debugging.** Connect the Quest to the laptop with a **USB-C data
+4. **USB debugging.** Connect the Quest to the computer with a **USB-C data
    cable** (charge-only cables won't work). In the headset, accept
-   **Allow USB debugging** → *Always allow from this computer*. Then on the laptop:
+   **Allow USB debugging** → *Always allow from this computer*. Then on the computer:
    ```bash
    npm run adb:devices     # = adb devices -l
    # should list one device as "device" (not "unauthorized")
    ```
 
-### 4.2 Open the app on the Quest — pick one
+### 3.2 Open the app on the Quest — pick one
 
 WebXR only works on a **secure context**: `https://…` or `http://localhost`.
 
@@ -209,7 +158,7 @@ npm run dev:usb
 ```
 
 In the Quest, open **Meta Quest Browser** → go to **http://localhost:8081**.
-`adb reverse` makes "localhost:8081" on the Quest point at your laptop, and
+`adb reverse` makes "localhost:8081" on the Quest point at your computer, and
 localhost counts as secure. Keep the cable plugged in.
 
 **Option B — Wi‑Fi (LAN) with the self-signed HTTPS certificate**
@@ -219,11 +168,12 @@ npm run dev:lan
 # Vite prints:  Network: https://192.168.x.y:8081/
 ```
 
-Quest and laptop must be on the same Wi‑Fi. In Quest Browser open
+Quest and computer must be on the same Wi‑Fi. In Quest Browser open
 `https://192.168.x.y:8081`, you'll get a certificate warning → *Advanced* →
 *Proceed* (wording may differ — verify). IWSDK generates and caches this
 dev certificate itself; nothing is installed into your system trust store.
-If Linux Mint's firewall (ufw) is on: `sudo ufw allow 8081/tcp`.
+If a Linux firewall (ufw) is on: `sudo ufw allow 8081/tcp`. On macOS, allow
+Node through the firewall when asked.
 
 Then, in both cases: tap **Enter VR** on the welcome card (or the Quest's
 own "Enter VR" prompt). The desk re-centers in front of you automatically.
@@ -231,9 +181,10 @@ own "Enter VR" prompt). The desk re-centers in front of you automatically.
 The emulator is **not** injected in Quest Browser (IWSDK skips `OculusBrowser`),
 so you get real WebXR.
 
+
 ---
 
-## 5. Controls
+## 4. Controls
 
 All controls go through one input layer (`src/input/`). Physical inputs map
 to actions — **grab**, **select**, **turnPage**, **toggleMenu**,
@@ -264,7 +215,7 @@ Volume −/+ · Add music… (leaves VR) · **Room: Pool room / your scenes** ·
 **Quality: High / Lite** · Recenter · Close. Tapping a middle "value"
 button resets it. All settings are saved in localStorage.
 
-**Whiteboard (Phase 2).** A 5 ft × 5.647 ft whiteboard on a wooden easel
+**Whiteboard.** A 5 ft × 5.647 ft whiteboard on a wooden easel
 stands to your right (0.80 m right, 0.15 m forward of your seat, center
 1.10 m high, turned to face you, leaning back 5°), in the same spot relative
 to the seat in every room, including custom scenes. Each board page = one
@@ -282,8 +233,7 @@ easel still sits at the same offset from that scene's seat. *Quality:
 High / Lite* picks the scene's full-resolution or low-texture build (only
 the selected one downloads). A missing or broken scene falls back to the
 Pool room with a message in the menu footer. `?room=glass` forces the Pool
-room, `?room=<folder>` a scene (Apartment, if you have `scenes/apartment/`, is
-`?room=apartment`).
+room, `?room=<folder>` a scene (e.g. `?room=example` for the example below).
 
 ### Custom scenes (your own rooms)
 
@@ -338,9 +288,10 @@ direction and shifts as you turn your head. It keeps playing while you
 read and turn pages. Bundled: *Fireplace crackle* and *Rain* (self-made,
 CC0). Browsers block audio until the first click/tap/Enter VR; that's normal.
 
+
 ---
 
-## 6. How the demo works / project structure
+## 5. How it works / project structure
 
 ```
 src/
@@ -348,7 +299,7 @@ src/
   app.ts                   shared objects + loadPdf() + requestPicker() (exit VR for file dialogs)
   settings.ts              book size, desk height/tilt, room + quality (signals, localStorage)
   input/
-    bindings.ts            ★ which physical input → which action (+ HANDS_ONLY switch, tuning)
+    bindings.ts            ★ which physical input → which action (+ hands-only switch, tuning)
     actions.ts             the per-frame action snapshot every system reads
     input-layer-system.ts  reads WebXR controllers/hands + keyboard → actions
   book/
@@ -358,7 +309,7 @@ src/
     page-grab.ts           ★ which press does what (page grab vs pick up vs swap), unit-tested
     book-physics.ts        tiny rigid-body sim for a dropped book (gravity, bounce, walls)
     reading-progress.ts    last-read page per book (localStorage)
-  notes/                   ★ Phase 2 whiteboard
+  notes/                   ★ whiteboard
     notes-model.ts         pure data: pages, strokes, smoothing, save format (unit-tested)
     notes-system.ts        marker/eraser grab + snap + writing, easel buttons, save/load/export, autosave
     easel.ts               procedural easel, board, tray, page bars + control panel, Load list
@@ -405,8 +356,8 @@ AGENTS.md, .agents/, .claude/, .cursor/   IWSDK's AI-assistant guidance (from th
 
 **Performance choices** (Quest 2 target 72 fps): unlit `MeshBasicMaterial`
 pages; the whole book is ≤5 draw calls; one 2048×1024 sky texture (only the
-selected environment is loaded); PDF pages rendered at 640 px tall and only
-~12 kept in GPU memory; no per-frame allocations in the input/book loops;
+selected environment is loaded); PDF pages rendered one at a time (1200 px by
+default, with a blurry preview first) and only a ~10-page window kept in GPU memory; no per-frame allocations in the input/book loops;
 the menu canvas only redraws when something changes.
 
 **Why IWSDK and not plain three.js**: the official scaffold ran
@@ -415,96 +366,59 @@ builds cleanly, and brings the IWER emulator + dev HTTPS + XR session
 handling for free. We still use raw WebXR (`world.xrFrame`,
 `session.inputSources`) in the input layer so every step is visible.
 
----
-
-## 7. Deploying (hosted link for judges)
+## 6. Hosting your own copy
 
 `vite.config.ts` uses `base: './'` (relative URLs), so the same build works
-on GitHub Pages under `/vr-study-room/` and on Vercel at the root.
+on GitHub Pages under `/vr-study-room/` and on any static host at the root.
+Before uploading `dist/` anywhere public, build with
+`LOCAL_SCENES=off npm run build` so your own custom scenes stay out.
 
-**This repo is PRIVATE.** GitHub Pages on a free account only works for
-**public** repos. Options:
-
-- **A) GitHub Pages** — make the repo public when you're ready (Settings →
-  General → Danger Zone → Change visibility), then Settings → Pages → Source:
-  **GitHub Actions**. The ready-made workflow is in
-  `deploy/github-pages-workflow.yml` (it could not be pushed into
-  `.github/workflows/` because the setup token lacked GitHub's `workflow`
-  scope). To activate it:
+- **GitHub Pages (your fork).** A ready-made workflow lives in
+  `deploy/github-pages-workflow.yml`. To use it:
   ```bash
   gh auth refresh -s workflow
   mkdir -p .github/workflows
   git mv deploy/github-pages-workflow.yml .github/workflows/deploy-pages.yml
   git commit -m "Enable Pages workflow" && git push
   ```
-  It then builds and deploys on every push to `main`. URL:
-  `https://youdontknowcrap.github.io/vr-study-room/`. The competition rules
-  mention GitHub Pages explicitly for IWSDK entries. Double-check nothing
-  private is in the repo history first.
-- **B) Vercel from the private repo** — <https://vercel.com> → Add New
-  Project → import `youdontknowcrap/vr-study-room` → framework preset
-  *Vite*, build `npm run build`, output `dist`. Free Hobby plan (verify the
-  plan's terms fit a contest entry). Keeps the code private.
+  then Settings → Pages → Source: **GitHub Actions**. It builds and deploys
+  on every push to `main`.
+- **Vercel / Netlify / any static host.** Framework preset *Vite*, build
+  command `npm run build`, output folder `dist`.
 
-Either way: test the **deployed** URL on the Quest before submitting, and
-keep it up until ~Dec 11, 2026.
+Test the deployed URL on the Quest itself: WebXR needs `https://`.
 
 ---
 
-## 8. Roadmap & calendar
+## 7. Ideas and known limitations
 
-Today: Mon Sep 28, 2026. Deadline: Wed Nov 18, 12:00 PM PT.
+Ideas for later: page-flutter physics when a dropped book falls (instead of
+a rigid box); sofas and armchairs as real colliders; texture atlases for
+heavy custom scenes; writing with a fingertip on your real desk; pushing
+notes to a Git repo; UIKitML menus; a wrist menu.
 
-| # | Dates | Milestone | Done when |
-|---|---|---|---|
-| M0 | Sep 28 – Oct 4 | **Demo book** (this starter) on the real Quest 2 | Runs ≥72 fps; book-in-hand pose tuned; page drag feels OK; MP3s play during reading |
-| M1 | Oct 5 – Oct 11 | **Handwriting spike on the desk surface** | Index fingertip draws a line on a virtual plane aligned to the real desk (calibrate by touching the desk / 3 corner taps); jitter measured; decide touch-to-write vs pinch-to-write |
-| M2 | Oct 12 – Oct 17 | **Whiteboard + eraser** | Strokes stored as vector polylines; eraser; clear; undo. **Push + deploy a working build before the trip.** |
-| — | **Oct 18 – Oct 26** | **Mexico — no dev** | (Optional: sketch the video script on paper) |
-| M3 | Oct 27 – Nov 2 | **PDF export** with jsPDF, **vector** strokes | "Export notes" writes a PDF (strokes as lines, not screenshots); download works from Quest Browser (verify) |
-| M4 | Nov 3 – Nov 8 | **Fade out controllers → hands-only pass** | `HANDS_ONLY = true`; every feature reachable with hands (palm-up menu, pinch page drag, poke buttons); test full session without pairing controllers |
-| M5 | Nov 9 – Nov 15 | **Polish / onboarding / video** | 30-second hands-only onboarding, perf pass on Quest (≥60 fps, target 72), FoV check, sound polish, record < 3 min video, write Devpost text, deploy public link |
-| — | Nov 16 – 17 | **Submit** (buffer day) | Devpost submission complete; deployed URL re-tested on Quest |
-| — | Nov 18, 12:00 PM PT | Hard deadline | |
+Things to know:
 
-Later / stretch: **book drop page-flutter physics** (pages flap while the
-book falls, instead of a rigid box); sofa/armchair as real colliders;
-texture atlases for heavy custom scenes (fewer draw calls); push notes to a
-Git repo; UIKitML menus; wrist menu.
-
----
-
-## 9. Known risks
-
-- **Fingertip handwriting precision on Quest 2.** Hand tracking jitters by
-  several millimeters and loses fingers when the hand is side-on or
-  occluded. Math symbols are small. Mitigations to try in M1: write large
-  on a whiteboard rather than tiny on paper; smooth strokes (One-Euro
-  filter); only ink while the fingertip is within a few mm of the desk
-  plane; pinch-to-write as a fallback.
-- **"Real desk" alignment.** Without scene understanding on a WebXR Quest 2
-  setup, the desk plane must be calibrated by the user (touch the desk).
-  Drift over time is possible — add a quick re-calibrate gesture.
-- **Quest 2 passthrough is grayscale and low-res**, so a passthrough "real
-  desk" mode would look much worse on Quest 2 than on judges' Quest 3/3S.
-  Keep the core experience fully immersive; passthrough only if it truly
-  helps (rule: passthrough must be purposeful).
-- **Cold start**: the IWSDK starter bundle is ~7 MB (~1.8 MB gzipped) plus a
-  1.3 MB pdf.js worker. Trim unused IWSDK features/fonts in M5 and measure
-  load time on Quest over Wi‑Fi.
-- **Audio autoplay**: audio only starts after a user gesture (verify it
-  starts reliably after Enter VR on Quest Browser).
-- **MP3 loop seam**: MP3 encoding adds a tiny gap at loop points of the
-  ambience files. If audible, switch to OGG or decode into an AudioBuffer.
-- **Book-in-hand pose**: grab offsets in `book-system.ts` are first
-  guesses; tune them on the device.
+- **Fingertip handwriting on Quest 2.** Hand tracking jitters by several
+  millimeters and loses fingers when the hand is side-on, so the whiteboard
+  is written with a held marker. Writing large, stroke smoothing and only
+  inking near the surface all help.
+- **Quest 2 passthrough is grayscale and low-res**, so the room is fully
+  immersive.
+- **Cold start**: the bundle is ~7 MB (~1.8 MB gzipped) plus the 1.3 MB
+  pdf.js worker. Over slow Wi-Fi the first load takes a moment.
+- **Audio autoplay**: browsers only start audio after a click, tap or
+  Enter VR.
+- **MP3 loop seam**: MP3 encoding adds a tiny gap at the loop point of the
+  ambience files. If it bothers you, switch to OGG or decode into an AudioBuffer.
 - **Custom scene cost**: one draw call per material in the model (a
-  sitcom-set model with joined meshes was ~69) + ~20 for the app. Quest 2 copes with ~100 at 72 Hz, but check
-  frame timing; if High stutters use *Quality: Lite*, or atlas the textures.
+  detailed room with joined meshes is easily ~70) + ~20 for the app. Quest 2
+  copes with ~100 at 72 Hz; if *High* stutters, use *Quality: Lite* or
+  atlas the textures.
 
 ---
 
-## 10. Troubleshooting
+## 8. Troubleshooting
 
 | Problem | Try |
 |---|---|
@@ -516,3 +430,20 @@ Git repo; UIKitML menus; wrist menu.
 | Hands not detected | Hand tracking enabled in Quest settings? Put controllers down (auto-switch). Needs decent, even lighting; avoid direct sunlight and very dark rooms; keep hands in front of the headset. |
 | No sound | Click/tap once on the page or enter VR (autoplay rule); menu → Play; check volume. |
 | Book is too high/low | Menu → Recenter (or thumbstick click / R) while sitting in your normal posture. |
+
+---
+
+## 9. Credits and attribution
+
+Made by Joey Martin ([@youdontknowcrap](https://x.com/youdontknowcrap) on X,
+[youdontknowcrap](https://github.com/youdontknowcrap) on GitHub).
+
+Every bundled asset is self-made or freely licensed (CC0, MIT, Apache-2.0):
+the pool photo and floor texture are CC0 from [Poly Haven](https://polyhaven.com)
+(Greg Zaal; Dario Barresi and Charlotte Baglioni), the ambience loops and
+sample book are self-made CC0, and the code stands on IWSDK, three.js,
+pdf.js, pdf-lib, uikit and fflate. The full list with sources and licenses
+is in **[ATTRIBUTION.md](ATTRIBUTION.md)**.
+
+Custom scenes you add yourself are not part of the repo: credit them in
+their `scene.json` and follow their licenses.
