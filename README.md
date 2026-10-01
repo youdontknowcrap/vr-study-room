@@ -165,6 +165,7 @@ Other useful scripts:
 | `npm run preview` | Serve the production build |
 | `npm run typecheck` | TypeScript check |
 | `npm run smoke` | Headless Chrome check (needs `npm run dev:runtime` running and `npm i --no-save playwright-core`); saves `smoke.png` |
+| `npm run smoke:notes` | Headless whiteboard check: grab marker, draw, erase, add page, export PDF (page count + letter size), save/load, Return, autosave restore. Tip: `IWSDK_DEV_OPEN=false npm run dev:runtime` skips the extra managed browser. |
 | `npm run assets:sample-pdf` / `assets:ambience` | Regenerate the bundled CC0 sample PDF / audio loops |
 
 ---
@@ -249,7 +250,11 @@ to actions — **grab**, **select**, **turnPage**, **toggleMenu**,
 | **Menu** | **B** or **Y** button | Poke or pinch the **☰ Menu** tab on the stand | **M** key, or click the tab |
 | Press a menu button | Point + trigger (or grip) | Poke with index fingertip, or point + pinch | Mouse click |
 | **Recenter** | Click the thumbstick | Menu → Recenter | **R** key |
-| **Bring book back** | Menu → Bring book back (also automatic on Recenter if it's on the floor / out of reach) | Same | **B** key |
+| **Return book + pens** | Menu → Return book + pens: the book goes back to the desk AND the marker + eraser go back to the easel tray (the book alone also comes back automatically on Recenter if it's on the floor / out of reach) | Same | **B** key |
+| **Pick up marker / eraser** | **Squeeze** near it (or point at it + squeeze: it flies to your hand). The controller model hides while you hold it. Let go = it glides back to the tray. | Pinch near it / point + pinch | – |
+| **Write / erase** | Push the marker tip (or the eraser's felt face) forward onto the whiteboard. Within 2.5 cm you see a cursor dot (marker) or circle (eraser); touching gives a light haptic tick. | Same (tool rides on the hand's grip pose) | – |
+| **Whiteboard pages / Save / Load / Export** | Point + trigger at the easel: ◀ left bar, ▶ right bar (**+** on the last page = new page), Rotate, Save, Load…, Export PDF. The marker tip can press them too. | Poke with a fingertip, or point + pinch | Mouse click |
+| **Marker color / size** | Menu → color swatches (8) and size circles (5) | Same | – |
 
 Menu contents: Open PDF… (leaves VR) · Sample book · Bring book back ·
 ◀ Page / Page ▶ · **Size − / Book 100% / Size +** (60–200 %, 10 % steps) ·
@@ -259,13 +264,26 @@ Volume −/+ · Add music… (leaves VR) · **Room: Pool room / your scenes** ·
 **Quality: High / Lite** · Recenter · Close. Tapping a middle "value"
 button resets it. All settings are saved in localStorage.
 
-**Rooms.** The *Pool room* (built in, the default) has a drafting desk.
-**Custom scenes** from your local `scenes/` folder are 3D models: the desk
-height/tilt controls move a **reading stand on the scene's table** (the
-furniture never moves). *Quality: High / Lite* picks the scene's
-full-resolution or low-texture build (only the selected one downloads). A
-missing or broken scene falls back to the Pool room with a message in the
-menu footer. `?room=glass` forces the Pool room, `?room=<folder>` a scene.
+**Whiteboard (Phase 2).** A 5 ft × 5.647 ft whiteboard on a wooden easel
+stands to your right (0.80 m right, 0.15 m forward of your seat, center
+1.10 m high, turned to face you, leaning back 5°), in the same spot relative
+to the seat in every room, including custom scenes. Each board page = one
+US Letter page in the PDF export (`notes-YYYY-MM-DD_HH-MM-SS.pdf`, 150 dpi).
+Save stores the whole notebook in IndexedDB under the same kind of timestamp
+name; Load shows a list next to the board. An autosave (3 s after your last
+stroke) restores your notes after a crash or reload. Code: `src/notes/`,
+details in `src/notes/notes-system.ts`.
+
+**Rooms.** The *Pool room* (built in, the default) has a drafting desk and
+is where the whiteboard was tuned. **Custom scenes** from your local
+`scenes/` folder are 3D models: the desk height/tilt controls move a
+**reading stand on the scene's table** (the furniture never moves). The
+easel still sits at the same offset from that scene's seat. *Quality:
+High / Lite* picks the scene's full-resolution or low-texture build (only
+the selected one downloads). A missing or broken scene falls back to the
+Pool room with a message in the menu footer. `?room=glass` forces the Pool
+room, `?room=<folder>` a scene (Apartment, if you have `scenes/apartment/`, is
+`?room=apartment`).
 
 ### Custom scenes (your own rooms)
 
@@ -340,6 +358,16 @@ src/
     page-grab.ts           ★ which press does what (page grab vs pick up vs swap), unit-tested
     book-physics.ts        tiny rigid-body sim for a dropped book (gravity, bounce, walls)
     reading-progress.ts    last-read page per book (localStorage)
+  notes/                   ★ Phase 2 whiteboard
+    notes-model.ts         pure data: pages, strokes, smoothing, save format (unit-tested)
+    notes-system.ts        marker/eraser grab + snap + writing, easel buttons, save/load/export, autosave
+    easel.ts               procedural easel, board, tray, page bars + control panel, Load list
+    tools.ts               procedural marker + eraser (modelled in grip space)
+    board-canvas.ts        per-page canvases → texture, dirty-rect uploads (once per frame)
+    notes-raster.ts        stroke drawing shared by the board and the PDF
+    notes-export.ts        PDF export (browser part) + download
+    notes-pdf.ts           pdf-lib: page images → letter-size PDF (unit-tested)
+    notes-store.ts         IndexedDB: saved notebooks + autosave
   menu/
     menu-panel.ts          canvas-drawn floating menu + "Menu" tab
     menu-system.ts         open/close, ray/poke/mouse button presses

@@ -17,9 +17,19 @@ import {
   SRGBColorSpace,
 } from '@iwsdk/core';
 
-export interface MenuButton {
+/** What a row entry may carry besides its label (whiteboard swatches). */
+export interface MenuItem {
   id: string;
   label: string;
+  /** Draw a filled color circle instead of text (marker color picker). */
+  swatch?: string;
+  /** Draw a circle of this radius in canvas px (writing size picker). */
+  dot?: number;
+  /** Highlight as the current choice. */
+  selected?: boolean;
+}
+
+export interface MenuButton extends MenuItem {
   x: number;
   y: number;
   w: number;
@@ -27,8 +37,13 @@ export interface MenuButton {
 }
 
 const CANVAS_W = 512;
-const CANVAS_H = 864;
-/** Physical size: 26 cm wide (x 43.9 cm tall). Comfortable to read at ~50 cm. */
+/**
+ * 1040 px tall since Phase 2 (was 864): two more rows for the marker color
+ * and size pickers. Same 26 cm width, so text stays the same size; the
+ * panel just got taller (52.8 cm).
+ */
+const CANVAS_H = 1040;
+/** Physical size: 26 cm wide (x 52.8 cm tall). Comfortable to read at ~50 cm. */
 const PANEL_W = 0.26;
 
 export class MenuPanel {
@@ -58,7 +73,7 @@ export class MenuPanel {
    * Describe the menu as rows of labels. Each row is split evenly into
    * buttons. Call again whenever a label changes (e.g. "Play" -> "Pause").
    */
-  setRows(rows: { id: string; label: string }[][], status: string): void {
+  setRows(rows: MenuItem[][], status: string): void {
     const pad = 24;
     const top = 88;
     const rowH = 56;
@@ -101,6 +116,33 @@ export class MenuPanel {
     this.draw(); // only redraw when something changes
   }
 
+  /**
+   * A color swatch (filled circle) or a size circle. The CURRENT choice gets
+   * a light ring, so you can see what's selected without reading anything.
+   */
+  private drawSwatch(b: MenuButton): void {
+    const g = this.ctx;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const r = b.dot ?? Math.min(b.w, b.h) / 2 - 9;
+    if (b.selected) {
+      roundRect(g, b.x + 3, b.y + 3, b.w - 6, b.h - 6, 12);
+      g.strokeStyle = '#f3e6cf';
+      g.lineWidth = 4;
+      g.stroke();
+    }
+    g.beginPath();
+    g.arc(cx, cy, r, 0, Math.PI * 2);
+    g.fillStyle = b.swatch ?? (b.selected ? '#f3e6cf' : '#bfae94');
+    g.fill();
+    if (b.swatch) {
+      // Thin light edge so black still shows on the dark button.
+      g.strokeStyle = 'rgba(243, 230, 207, 0.55)';
+      g.lineWidth = 2;
+      g.stroke();
+    }
+  }
+
   private draw(): void {
     const g = this.ctx;
     g.clearRect(0, 0, CANVAS_W, CANVAS_H);
@@ -126,6 +168,10 @@ export class MenuPanel {
       const isOn = /: On$/.test(b.label);
       g.fillStyle = b.id === this.hovered ? '#d9a55b' : isValue ? '#2f251e' : isOn ? '#3d5a36' : '#4a3a2e';
       g.fill();
+      if (b.swatch || b.dot) {
+        this.drawSwatch(b);
+        continue;
+      }
       g.fillStyle = b.id === this.hovered ? '#1c1612' : '#f3e6cf';
       g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1, b.w - 12);
     }

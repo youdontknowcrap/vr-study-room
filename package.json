@@ -20,7 +20,8 @@
     "assets:sample-pdf": "python3 scripts/make-sample-pdf.py",
     "assets:ambience": "python3 scripts/make-ambience.py",
     "smoke": "node scripts/smoke-test.mjs",
-    "test:unit": "node --experimental-strip-types --no-warnings scripts/unit-page-grab.mjs && node --experimental-strip-types --no-warnings scripts/unit-palm-frame.mjs && node --experimental-strip-types --no-warnings scripts/unit-epub.mjs && node --experimental-strip-types --no-warnings scripts/unit-page-window.mjs && node --experimental-strip-types --no-warnings scripts/unit-scenes.mjs",
+    "smoke:notes": "node scripts/smoke-notes.mjs",
+    "test:unit": "node --experimental-strip-types --no-warnings scripts/unit-page-grab.mjs && node --experimental-strip-types --no-warnings scripts/unit-palm-frame.mjs && node --experimental-strip-types --no-warnings scripts/unit-epub.mjs && node --experimental-strip-types --no-warnings scripts/unit-page-window.mjs && node --experimental-strip-types --no-warnings scripts/unit-scenes.mjs && node --experimental-strip-types --no-warnings scripts/unit-notes.mjs",
     "test:bigpdf": "node scripts/test-bigpdf.mjs"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "@pmndrs/uikit-horizon": "^1.0.74",
     "@pmndrs/uikit-lucide": "^1.0.74",
     "fflate": "^0.8.3",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
     "three": "npm:super-three@0.181.0"
   },

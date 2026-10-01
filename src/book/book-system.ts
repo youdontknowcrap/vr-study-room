@@ -235,6 +235,26 @@ export class BookSystem extends createSystem({}) {
     });
   }
 
+  /**
+   * For the whiteboard tools (NotesSystem runs BEFORE this system): would a
+   * grab press from `hand` go to the book? Near = hand at the book; rayDist
+   * = how far along the hand's ray the book is (null = ray misses it).
+   * Lets the marker/eraser and the book share the squeeze button fairly.
+   */
+  grabCandidate(hand: HandState): { near: boolean; rayDist: number | null } {
+    const near = this.isNear(hand);
+    if (!hand.rayValid) return { near, rayDist: null };
+    raycaster.set(hand.rayOrigin, hand.rayDirection);
+    raycaster.far = RAY_GRAB_DISTANCE;
+    const hit = raycaster.intersectObject(app.book.hitMesh, false)[0];
+    return { near, rayDist: hit ? hit.distance : null };
+  }
+
+  /** Which hand holds the book (null = none). Used to hide that controller. */
+  get holderHand(): Handedness | null {
+    return this.state.kind === 'held' ? this.state.hand : null;
+  }
+
   /** What the book is doing right now (for menus, tests, debugging). */
   get stateName(): string {
     const s = this.state;
@@ -466,8 +486,9 @@ export class BookSystem extends createSystem({}) {
       this.handMatrix(hand, m1);
       offset.copy(m1).invert().multiply(root.matrixWorld);
     } else if (hand.kind === 'hand' && hand.palmValid) {
-      // Right-hand thumb is −X in the palm frame, left-hand thumb is +X.
-      const side = h === 'right' ? -1 : 1;
+      // Right-hand thumb is +X in the palm frame, left-hand thumb is −X
+      // (palm-frame.ts), so `side` moves the book toward the thumb on both.
+      const side = h === 'right' ? 1 : -1;
       offset.compose(
         local.set(side * PALM_OFFSET.x, PALM_OFFSET.y, PALM_OFFSET.z),
         quat.setFromEuler(new Euler(PALM_OFFSET.tiltX, 0, 0)),

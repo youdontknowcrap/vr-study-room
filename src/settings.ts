@@ -7,6 +7,7 @@
  * stay in sync this way, and saving is just one more subscriber.
  */
 import { signal } from '@iwsdk/core';
+import { DEFAULT_PEN_COLOR, DEFAULT_PEN_SIZE_MM, PEN_COLORS, PEN_SIZES_MM } from './notes/notes-model.js';
 import {
   DEFAULT_ROOM,
   isBuiltinRoom,
@@ -102,9 +103,20 @@ export function stepSetting(
  * may be mid-edit (broken scene.json) or have the folder elsewhere. The app
  * shows the pool room with a message, and your pick comes back once the
  * scene loads again. Only garbage values reset to the default.
+ *
+ * One-time switch to the pool room for the whiteboard phase. WHY a "rev"
+ * key: the saved room is written on every launch (subscribe fires right
+ * away), so a headset that ever ran the app has an old room stored and
+ * would never see the new default. This flips it ONCE; after that the
+ * menu's Room button is remembered as usual.
  */
 function readRoom(): RoomChoice {
   try {
+    const revKey = 'vrStudyRoom.roomDefaultRev';
+    if (localStorage.getItem(revKey) !== '2') {
+      localStorage.setItem(revKey, '2');
+      return DEFAULT_ROOM;
+    }
     const raw = localStorage.getItem(KEY_ROOM);
     return raw && (isBuiltinRoom(raw) || isValidSceneId(raw)) ? raw : DEFAULT_ROOM;
   } catch {
@@ -113,6 +125,22 @@ function readRoom(): RoomChoice {
 }
 export const roomChoice = signal<RoomChoice>(readRoom());
 roomChoice.subscribe((v) => write(KEY_ROOM, v));
+
+// ---------------------------------------------------------------------------
+// WHITEBOARD MARKER (menu: "Marker color" swatches and "Size" circles)
+// ---------------------------------------------------------------------------
+
+/** Marker color as a CSS hex string, one of PEN_COLORS (unknown saved values fall back to black). */
+function readPenColor(): string {
+  try {
+    const raw = localStorage.getItem('vrStudyRoom.penColor');
+    return raw && PEN_COLORS.some((c) => c.hex === raw) ? raw : DEFAULT_PEN_COLOR;
+  } catch {
+    return DEFAULT_PEN_COLOR;
+  }
+}
+export const penColor = signal<string>(readPenColor());
+penColor.subscribe((v) => write('vrStudyRoom.penColor', v));
 
 /** QUALITY of model rooms: "high" (full-res textures, default) or "lite". */
 function readQuality(): RoomQuality {
@@ -186,6 +214,9 @@ export function stepLevel(sig: { value: number }, levels: readonly number[], dir
   const next = Math.min(levels.length - 1, Math.max(0, (i < 0 ? 0 : i) + dir));
   sig.value = levels[next];
 }
+
+/** Marker stroke RADIUS in millimeters, one of PEN_SIZES_MM. */
+export const penSizeMm = levelSignal('vrStudyRoom.penSizeMm', PEN_SIZES_MM, DEFAULT_PEN_SIZE_MM);
 
 /**
  * 1. STREAMING LOAD. On = pdf.js reads only the byte ranges it needs from the

@@ -29,7 +29,9 @@ function rotate(q, v) {
 
 function palmUp(hand, wristX) {
   const wrist = { x: wristX, y: 1, z: 0.3 };
-  const thumbSign = hand === 'right' ? -1 : 1;
+  // Palm up, fingers forward (−Z): a RIGHT thumb points to +X, a left one to −X.
+  // (Hold your own right hand out palm-up to check.)
+  const thumbSign = hand === 'right' ? 1 : -1;
   return palmFrame(
     hand,
     wrist,
@@ -61,6 +63,30 @@ for (const hand of ['right', 'left']) {
     assert.equal(handed, cx);
   });
 }
+
+test('right hand palm-up has its thumb at +X (left at −X)', () => {
+  const r = palmUp('right', 0.2);
+  const l = palmUp('left', -0.2);
+  // thumbward = index metacarpal − pinky metacarpal, expressed in the frame's X.
+  const thumbX = (hand, f) => {
+    const s = hand === 'right' ? 1 : -1; // what palmUp() built
+    return s * f.x.x; // world thumb direction is (s, 0, 0)
+  };
+  assert.ok(thumbX('right', r) > 0.99, 'right thumb along palm +X');
+  assert.ok(thumbX('left', l) < -0.99, 'left thumb along palm −X');
+});
+
+test('palm-down right hand: +Z still comes out of the palm (world −Y)', () => {
+  // Palm down, fingers forward: the right thumb now points to −X.
+  const f = palmFrame(
+    'right',
+    { x: 0, y: 1, z: 0.3 },
+    { x: -0.02, y: 1, z: 0.24 },
+    { x: 0.02, y: 1, z: 0.24 },
+    { x: 0, y: 1, z: 0.22 },
+  );
+  assert.ok(f && vNear(f.z, 0, -1, 0), 'palm normal points down');
+});
 
 test('collapsed joints are not a palm', () => {
   const wrist = { x: 0, y: 0, z: 0 };

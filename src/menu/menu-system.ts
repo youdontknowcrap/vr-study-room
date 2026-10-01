@@ -31,7 +31,10 @@ import {
   perfStats,
   showExitBrowser,
   stepLevel,
+  penColor,
+  penSizeMm,
 } from '../settings.js';
+import { PEN_COLORS, PEN_SIZES_MM } from '../notes/notes-model.js';
 import { pdfKeepCount } from '../book/page-window.js';
 import { onRoomChange } from '../room/room-switch.js';
 import { availableRooms, roomNotice } from '../room/scene-loader.js';
@@ -90,6 +93,8 @@ export class MenuSystem extends createSystem({}) {
       pdfRenderQueue.subscribe(markDirty),
       pdfPreview.subscribe(markDirty),
       perfStats.subscribe(markDirty),
+      penColor.subscribe(markDirty),
+      penSizeMm.subscribe(markDirty),
       app.music.playing.subscribe(markDirty),
       app.music.index.subscribe(markDirty),
       app.music.volume.subscribe(markDirty),
@@ -211,7 +216,10 @@ export class MenuSystem extends createSystem({}) {
         void loadSampleBook();
         break;
       case 'bring-back':
+        // Phase 2: "return" resets the book AND the marker + eraser (to the
+        // easel tray). The B key does the same (actions.bringBookBack).
         app.bookSystem.bringBack();
+        app.notes?.returnTools();
         break;
       // Book size / desk height / desk tilt: - and + step, the value resets.
       case 'size-down':
@@ -279,6 +287,11 @@ export class MenuSystem extends createSystem({}) {
       // ---- Big PDF / performance sub-page --------------------------------
       case 'perf':
         this.page = 'perf';
+        break;
+      default:
+        // Marker color / size pickers: ids "pen-color-3", "pen-size-1".
+        if (id.startsWith('pen-color-')) penColor.value = PEN_COLORS[Number(id.slice(10))]?.hex ?? penColor.value;
+        else if (id.startsWith('pen-size-')) penSizeMm.value = PEN_SIZES_MM[Number(id.slice(9))] ?? penSizeMm.value;
         break;
       case 'perf-back':
         this.page = 'main';
@@ -348,8 +361,17 @@ export class MenuSystem extends createSystem({}) {
         [{ id: 'book', label: 'Open book… (leaves VR)' }],
         [
           { id: 'sample', label: 'Sample book' },
-          { id: 'bring-back', label: 'Bring book back' },
+          { id: 'bring-back', label: 'Return book + pens' },
         ],
+        // Whiteboard marker: 8 color swatches, then 5 size circles (drawn at
+        // 2.4 px per mm of radius, so they compare like the real line widths).
+        PEN_COLORS.map((c, i) => ({ id: `pen-color-${i}`, label: c.name, swatch: c.hex, selected: c.hex === penColor.value })),
+        PEN_SIZES_MM.map((mm, i) => ({
+          id: `pen-size-${i}`,
+          label: `${mm} mm`,
+          dot: Math.min(24, 3 + mm * 2.4),
+          selected: mm === penSizeMm.value,
+        })),
         [
           { id: 'prev-page', label: '◀ Page' },
           { id: 'next-page', label: 'Page ▶' },
