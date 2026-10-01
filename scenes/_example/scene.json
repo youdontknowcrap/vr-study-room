@@ -1,0 +1,11 @@
+{
+  "name": "Example room",
+  "model": "room.gltf",
+  "scale": 1,
+  "seat": { "x": 0, "z": 0.05, "yawDeg": 0 },
+  "stand": { "node": "Desk", "x": 0, "z": -0.55 },
+  "light": { "color": "#fff1dc", "intensity": 1.2, "position": { "x": 0.5, "y": 3, "z": 1 } },
+  "fixes": { "decalMaterials": ["fabric"] },
+  "credit": "Example room by Joey Martin (made by scripts/make-example-scene.mjs)",
+  "license": "CC0 1.0"
+}

@@ -1,5 +1,5 @@
 /**
- * Swapping rooms while the app runs ("Room: Apartment / Glass door" in the menu).
+ * Swapping rooms while the app runs (menu "Room: <name> ⇄").
  *
  * Everything that lives IN the room has to move to the new one:
  *  - the music speaker sits inside the radio (Music re-parents it),

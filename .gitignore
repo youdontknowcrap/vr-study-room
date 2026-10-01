@@ -49,3 +49,10 @@ smoke*.png
 
 # Big PDF test output (scripts/test-bigpdf.mjs). Never commit big PDFs either.
 test-bigpdf-results.json
+
+# Local custom scenes = YOUR rooms (models often have licenses that don't
+# allow re-publishing). Only the docs and the tiny example are tracked.
+# See scenes/README.md.
+/scenes/*
+!/scenes/README.md
+!/scenes/_example/

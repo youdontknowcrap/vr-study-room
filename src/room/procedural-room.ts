@@ -1,7 +1,8 @@
 /**
- * ProceduralRoom — the built-in "glass door" room, made from boxes in code.
- * It needs no downloads except two small textures, so it is the FALLBACK
- * room whenever a 3D-model room (glb-room.ts) is disabled or fails to load.
+ * ProceduralRoom — the built-in "pool room" (a room with a sliding glass
+ * door onto a backyard pool), made from boxes in code. It needs no downloads
+ * except two small CC0 textures, so it is the DEFAULT room and the FALLBACK
+ * whenever a custom scene (glb-room.ts) is missing or fails to load.
  * (It replaces the old 360-degree photo rooms.)
  *
  *   Top view (you sit at "U", looking toward -z):
@@ -65,7 +66,7 @@ const DOOR = { x0: -0.35, x1: 1.85, height: 2.05 };
 const DESK_DISTANCE = 0.3;
 
 export class ProceduralRoom implements StudyRoom {
-  readonly name = 'Glass door';
+  readonly name = 'Pool room';
   /** Move this to move the whole room (walls, desk, everything). */
   readonly area = new Group();
   readonly desk = new Desk();

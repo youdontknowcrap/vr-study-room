@@ -1,9 +1,9 @@
 /**
  * Room "plug-in" contract.
  *
- * The app can run in different rooms: the built-in glass-door room
- * (procedural-room.ts, always available = the FALLBACK) or a downloaded 3D
- * model (glb-room.ts, e.g. a sitcom apartment). Every room provides the
+ * The app can run in different rooms: the built-in pool room
+ * (procedural-room.ts, always available = the DEFAULT and FALLBACK) or a
+ * 3D model from a custom scene (glb-room.ts + scenes/<id>/scene.json). Every room provides the
  * same few things, so the book, menu and music code never care which room
  * is loaded:
  *

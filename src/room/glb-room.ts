@@ -1,32 +1,37 @@
 /**
- * GlbRoom — a room made from a downloaded 3D model (glTF / GLB file).
+ * GlbRoom — a room made from a 3D model (glTF / GLB file), described by a
+ * custom scene's scene.json (see scene-manifest.ts and scenes/README.md).
  *
  * The model is just scenery. On top of it we add what the app needs:
  *  - a ReadingStand on the configured table (the "desk": book, menu tab),
  *  - the radio on that table, beside the stand,
  *  - one soft light (the scene's image-based light does the rest),
- *  - the seat pose, so Recenter puts YOU on the sofa facing the table.
+ *  - the seat pose, so Recenter puts YOU in the seat facing the table,
+ *  - optional fixes for set-like models: a "fourth wall", a ceiling slab,
+ *    decal depth offsets (manifest `fixes`).
  *
- * Performance (Quest 2): keep room models small (the planned one is ~6.5k
- * triangles). Shadows are off; textures are GPU-compressed KTX2 (see
- * scripts/optimize-room-model.sh; High and Lite builds). Meshes are joined per material, so the
- * apartment costs ~69 draw calls; three.js skips the ones out of view.
+ * Performance (Quest 2): keep room models small (tens of thousands of
+ * triangles at most). Shadows are off; textures should be GPU-compressed
+ * KTX2 (see scripts/optimize-room-model.sh, which makes High and Lite
+ * builds). Join meshes per material: every material is one draw call.
  */
 import {
+  Box3,
   DirectionalLight,
   Group,
   Mesh,
   MeshStandardMaterial,
+  Vector3,
   type Light,
   type Material,
   type Object3D,
   type Quaternion,
-  type Vector3,
 } from '@iwsdk/core';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { app } from '../app.js';
 import type { GlbRoomConfig, RoomQuality } from './room-config.js';
+import type { Placement } from './scene-manifest.js';
 import { boxFromTo, merge } from './geometry-utils.js';
 import { ReadingStand } from './reading-stand.js';
 import {
@@ -64,14 +69,18 @@ export class GlbRoom implements StudyRoom {
   readonly seat: SeatPose;
   readonly bounds: RoomBounds;
   readonly tables: FlatSurface[];
+  /** Camera near plane this scene wants (manifest fixes.near), if any. */
+  readonly near?: number;
+  /** Optional whiteboard/easel spot from the manifest (room space). */
+  readonly whiteboard?: Placement;
   /** Which texture build is showing (menu label). */
   quality: RoomQuality = 'high';
 
   private constructor(cfg: GlbRoomConfig, model: Group) {
     this.name = cfg.name;
     this.seat = cfg.seat;
-    this.bounds = cfg.bounds;
-    this.tables = [cfg.table, ...(cfg.extraSurfaces ?? [])];
+    this.near = cfg.fixes.near;
+    this.whiteboard = cfg.whiteboard;
 
     // Fit the model: scale to meters, turn, then move its floor to y = 0.
     model.scale.setScalar(cfg.scale);
@@ -88,16 +97,25 @@ export class GlbRoom implements StudyRoom {
       if ((o as Light).isLight) lights.push(o);
     });
     for (const l of lights) l.removeFromParent();
-    if (cfg.decalMaterials) applyDecalOffset(model, cfg.decalMaterials);
+    if (cfg.fixes.decalMaterials.length) applyDecalOffset(model, cfg.fixes.decalMaterials);
     this.area.add(model);
+    // WHY update matrices now: the measurements below (node / model bounding
+    // boxes) read world matrices, and three.js only refreshes them at render.
+    // `area` is still at the origin, so "world" here = room space.
+    this.area.updateMatrixWorld(true);
+
+    // The table: given in the manifest, or measured from a model node.
+    const t = cfg.table ?? measureTable(model, cfg.stand.node);
+    // Book-physics walls: given, or the model's footprint.
+    this.bounds = cfg.bounds ?? measureBounds(model);
+    this.tables = [t, ...cfg.extraSurfaces];
 
     // Reading stand on the table, turned so its near edge faces the seat.
-    const t = cfg.table;
-    const at = cfg.stand ?? { x: t.x, z: t.z };
+    const at = cfg.stand.x !== undefined && cfg.stand.z !== undefined ? { x: cfg.stand.x, z: cfg.stand.z } : { x: t.x, z: t.z };
     this.desk = new ReadingStand(t.y);
-    // SIT_LIFT: the measured table top is 0.3809 m, config says 0.38. Without
-    // the lift the stand's base plate would sit 1 mm INSIDE the table top,
-    // right where the model's coffee-table book lies (z-fighting bait).
+    // SIT_LIFT: measured table tops are rarely exactly the number in the
+    // manifest (0.3809 vs 0.38). Without the lift the stand's base plate can
+    // sit 1 mm INSIDE the table top, right where props lie (z-fighting bait).
     this.desk.group.position.set(at.x, t.y + SIT_LIFT, at.z);
     // atan2(dx, dz) = the yaw that turns local +z (the stand's near edge) toward the seat.
     this.desk.group.rotation.y = Math.atan2(cfg.seat.x - at.x, cfg.seat.z - at.z);
@@ -111,13 +129,15 @@ export class GlbRoom implements StudyRoom {
     }
     this.area.add(this.desk.group);
 
-    if (cfg.fourthWall) this.area.add(buildFourthWall(cfg.fourthWall, cfg.ceiling?.y));
-    if (cfg.ceiling) this.area.add(buildCeiling(cfg.ceiling));
+    const { fourthWall, ceiling } = cfg.fixes;
+    if (fourthWall) this.area.add(buildFourthWall(fourthWall, ceiling?.y));
+    if (ceiling) this.area.add(buildCeiling(ceiling));
 
-    const light = new DirectionalLight(0xfff4e6, 1.0);
-    light.position.set(1, 3, 1);
+    const l = cfg.light;
+    const light = new DirectionalLight(l.color, l.intensity);
+    light.position.set(l.position.x, l.position.y, l.position.z);
     this.area.add(light, light.target);
-    console.info(`[room] loaded ${cfg.name} (${cfg.credit})`);
+    console.info(`[room] loaded ${cfg.name}${cfg.credit ? ` (${cfg.credit})` : ''}`);
   }
 
   /**
@@ -125,7 +145,7 @@ export class GlbRoom implements StudyRoom {
    * Only the file for the chosen quality is fetched.
    */
   static async load(cfg: GlbRoomConfig, quality: RoomQuality): Promise<GlbRoom> {
-    const gltf = await gltfLoader().loadAsync(`${import.meta.env.BASE_URL}${cfg.urls[quality]}`);
+    const gltf = await gltfLoader().loadAsync(`${cfg.baseUrl}${cfg.model[quality]}`);
     const room = new GlbRoom(cfg, gltf.scene);
     room.quality = quality;
     return room;
@@ -138,6 +158,28 @@ export class GlbRoom implements StudyRoom {
   recenter(headPos: Vector3, headQuat: Quaternion): void {
     recenterArea(this.area, this.seat, headPos, headQuat);
   }
+}
+
+/**
+ * Table from a model node (manifest `"stand": {"node": "Desk"}`): the top
+ * of its bounding box, axis-aligned. WHY offer this: reading exact numbers
+ * off a model is the fiddliest part of adding a room. A node name from
+ * Blender's outliner is usually enough to get started; switch to an explicit
+ * `table` later if the box is off (e.g. a round table's box is a square).
+ */
+function measureTable(model: Object3D, node: string | undefined): FlatSurface {
+  const target = node ? model.getObjectByName(node) : undefined;
+  if (!target) throw new Error(`stand.node "${node}" not found in the model (check the node names in Blender/gltf.report)`);
+  const box = new Box3().setFromObject(target);
+  const c = box.getCenter(new Vector3());
+  const size = box.getSize(new Vector3());
+  return { x: c.x, z: c.z, y: box.max.y, halfW: size.x / 2, halfD: size.z / 2, yaw: 0 };
+}
+
+/** Physics walls from the whole model's bounding box (room space). */
+function measureBounds(model: Object3D): RoomBounds {
+  const box = new Box3().setFromObject(model);
+  return { minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z, height: Math.max(1, box.max.y) };
 }
 
 /*
@@ -161,7 +203,8 @@ export class GlbRoom implements StudyRoom {
  * (in VR your head ALWAYS moves a little), so the two surfaces shimmer and
  * tear through each other in stripes. That is z-fighting.
  *
- * What caused the fourth-wall flicker here:
+ * What caused the fourth-wall flicker in the first model room (a TV-set
+ * model whose manifest now lives in a local scene folder):
  *  1. near = 0.001 m (1 mm!) in iwsdk.config.json. With near that tiny, the
  *     step at 4 m is ~1 mm with 24 bits and ~24 cm (!) with 16 bits, so the
  *     wall, its 2 cm wainscot/trim strips and the model's edges all fought.
@@ -174,10 +217,11 @@ export class GlbRoom implements StudyRoom {
  *     visible faces ever share a plane.
  *  3. The wall face sat 5 mm in front of where the model's floor and side
  *     walls end (z 4.465): nearly coplanar edges. Now it is 2.5 cm inside.
- *  4. The model's own decals: the rug floats 3.4 mm over the floor, carpet
- *     and tile lie exactly ON the floor, magazines on the coffee table...
- *     Those get polygonOffset (below), and the reading stand / radio sit
- *     2 mm above the table top instead of 1 mm inside it.
+ *  4. The model's own decals: a rug floating 3.4 mm over the floor, carpet
+ *     and tile lying exactly ON the floor, magazines on a table...
+ *     Those get polygonOffset (manifest fixes.decalMaterials, below), and
+ *     the reading stand / radio sit 2 mm above the table top instead of
+ *     1 mm inside it.
  *
  * Three tools, in order of preference:
  *  - Don't build coplanar faces: overlap solids by ~1 cm, or leave a few mm
@@ -222,19 +266,19 @@ function applyDecalOffset(model: Object3D, names: string[]): void {
  * 8 cm thick and starts just below the model's wall tops, so the walls (and
  * our fourth wall) poke into it: no sky gap, and no shared planes.
  */
-function buildCeiling(c: NonNullable<GlbRoomConfig['ceiling']>): Mesh {
+function buildCeiling(c: NonNullable<GlbRoomConfig['fixes']['ceiling']>): Mesh {
   const ceiling = new Mesh(
     boxFromTo(c.minX, c.y, c.minZ, c.maxX, c.y + 0.08, c.maxZ),
-    new MeshStandardMaterial({ color: 0xeeeae2, roughness: 0.95 }),
+    new MeshStandardMaterial({ color: c.color, roughness: 0.95 }),
   );
   ceiling.name = 'ceiling';
   return ceiling;
 }
 
 /**
- * The missing "fourth wall" of a TV-set model: a plain wall in the room's
- * colors (lavender above, dark gray wainscot below) with a 90s TV on a low
- * stand facing the sofa. 4 meshes, no textures.
+ * The missing "fourth wall" of a TV-set model: a plain wall (manifest
+ * `color` above, `trimColor` wainscot below), optionally with a 90s TV on a
+ * low stand facing into the room (`tvX`). 2-4 meshes, no textures.
  *
  * Every piece OVERLAPS its neighbours by OVERLAP (1 cm) instead of touching
  * them face to face (see "Z-FIGHTING" above). Side view, room on the left:
@@ -246,7 +290,7 @@ function buildCeiling(c: NonNullable<GlbRoomConfig['ceiling']>): Mesh {
  *               wainscot ->  [| |   |   <- wainscot back sunk 1 cm into the wall
  *        floor =================|___|== <- wall bottom 2 cm below the floor
  */
-function buildFourthWall(fw: NonNullable<GlbRoomConfig['fourthWall']>, ceilingY?: number): Group {
+function buildFourthWall(fw: NonNullable<GlbRoomConfig['fixes']['fourthWall']>, ceilingY?: number): Group {
   const g = new Group();
   g.name = 'fourth-wall';
   const z = fw.z; // the wall's inner face; the room is on the -z side
@@ -254,10 +298,9 @@ function buildFourthWall(fw: NonNullable<GlbRoomConfig['fourthWall']>, ceilingY?
   const wall = new Mesh(
     // From 2 cm under the floor up into the ceiling slab, 10 cm thick.
     boxFromTo(fw.minX, -0.02, z, fw.maxX, Math.max(fw.height, top + OVERLAP), z + 0.1),
-    new MeshStandardMaterial({ color: 0xc8c6ec, roughness: 0.9 }),
+    new MeshStandardMaterial({ color: fw.color, roughness: 0.9 }),
   );
-  const dark = new MeshStandardMaterial({ color: 0x4e525e, roughness: 0.7 });
-  const x = fw.tvX;
+  const dark = new MeshStandardMaterial({ color: fw.trimColor, roughness: 0.7 });
   // Strips stick out of the wall (fronts at z-0.02 / -0.04 / -0.05: all
   // different) and their backs are sunk OVERLAP into it, so none of their
   // faces lies in the wall's front plane.
@@ -269,12 +312,15 @@ function buildFourthWall(fw: NonNullable<GlbRoomConfig['fourthWall']>, ceilingY?
     ]),
     dark,
   );
+  g.add(wall, trim);
+  if (fw.tvX === undefined) return g;
+  const x = fw.tvX;
   // TV stand: 1 cm sunk into the floor, 6 cm in front of the wall.
   const stand = new Mesh(
     boxFromTo(x - 0.5, -0.01, z - 0.5, x + 0.5, 0.45, z - 0.06),
     new MeshStandardMaterial({ color: 0x6b4a32, roughness: 0.6 }),
   );
-  // A boxy 90s CRT TV with its glass screen on the front (faces the sofa, -z).
+  // A boxy 90s CRT TV with its glass screen on the front (faces into the room, -z).
   // Body sunk 5 mm into the stand top; screen sunk 1 cm into the body front.
   const tv = new Mesh(
     merge([
@@ -283,6 +329,6 @@ function buildFourthWall(fw: NonNullable<GlbRoomConfig['fourthWall']>, ceilingY?
     ]),
     new MeshStandardMaterial({ color: 0x1c1d21, roughness: 0.35, metalness: 0.2 }),
   );
-  g.add(wall, trim, stand, tv);
+  g.add(stand, tv);
   return g;
 }

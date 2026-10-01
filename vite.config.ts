@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { iwsdkDev } from '@iwsdk/vite-plugin-dev';
 import { defineConfig, type Plugin } from 'vite';
+import { localScenes } from './vite-plugins/local-scenes.ts';
 
 /**
  * pdf.js looks up CMaps, standard fonts, wasm decoders and ICC profiles by
@@ -122,7 +123,13 @@ const plainHttp = process.env.IWSDK_HTTP === '1';
 
 export default defineConfig({
   // Keep iwsdkDev() bare in the default case so it reads iwsdk.config.json.
-  plugins: [plainHttp ? iwsdkDev({ https: false }) : iwsdkDev(), pdfjsStaticAssets(), streamDebugLog()],
+  plugins: [
+    plainHttp ? iwsdkDev({ https: false }) : iwsdkDev(),
+    pdfjsStaticAssets(),
+    streamDebugLog(),
+    // Your own rooms from the gitignored scenes/ folder (see scenes/README.md).
+    localScenes({ dir: 'scenes' }),
+  ],
   server: { host: '0.0.0.0', port: 8081, strictPort: true, open: false },
   build: {
     outDir: 'dist',

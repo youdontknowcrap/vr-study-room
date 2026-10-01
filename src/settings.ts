@@ -8,11 +8,13 @@
  */
 import { signal } from '@iwsdk/core';
 import {
-  ROOM_CHOICES,
+  DEFAULT_ROOM,
+  isBuiltinRoom,
   ROOM_QUALITIES,
   type RoomChoice,
   type RoomQuality,
 } from './room/room-config.js';
+import { isValidSceneId } from './room/scene-manifest.js';
 
 const KEY_BOOK_SCALE = 'vrStudyRoom.bookScale';
 const KEY_DESK_HEIGHT = 'vrStudyRoom.deskHeight';
@@ -93,15 +95,20 @@ export function stepSetting(
 }
 
 /**
- * ROOM: "apartment" (the sitcom apartment, the default) or "glass" (the built-in
- * glass-door room, the fallback). The menu's Room button flips it.
+ * ROOM: a built-in room id ("glass" = the pool room, the default) or the
+ * folder name of a custom scene in scenes/. The menu's Room button cycles it.
+ *
+ * WHY we keep an id even if that scene isn't on the server right now: you
+ * may be mid-edit (broken scene.json) or have the folder elsewhere. The app
+ * shows the pool room with a message, and your pick comes back once the
+ * scene loads again. Only garbage values reset to the default.
  */
 function readRoom(): RoomChoice {
   try {
-    const raw = localStorage.getItem(KEY_ROOM) as RoomChoice | null;
-    return raw && ROOM_CHOICES.includes(raw) ? raw : 'apartment';
+    const raw = localStorage.getItem(KEY_ROOM);
+    return raw && (isBuiltinRoom(raw) || isValidSceneId(raw)) ? raw : DEFAULT_ROOM;
   } catch {
-    return 'apartment';
+    return DEFAULT_ROOM;
   }
 }
 export const roomChoice = signal<RoomChoice>(readRoom());

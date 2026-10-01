@@ -34,7 +34,18 @@ import {
 } from '../settings.js';
 import { pdfKeepCount } from '../book/page-window.js';
 import { onRoomChange } from '../room/room-switch.js';
+import { availableRooms, roomNotice } from '../room/scene-loader.js';
 import { createMenuTab, MenuPanel } from './menu-panel.js';
+
+/**
+ * The room after `id` in the menu's list, wrapping around. An id that isn't
+ * in the list (scene missing/broken right now) goes to the first room.
+ */
+function nextRoom(id: string): string {
+  const rooms = availableRooms();
+  const i = rooms.findIndex((r) => r.id === id);
+  return rooms[(i + 1) % rooms.length].id;
+}
 
 const raycaster = new Raycaster();
 const tmp = new Vector3();
@@ -72,6 +83,7 @@ export class MenuSystem extends createSystem({}) {
       deskHeight.subscribe(markDirty),
       deskTilt.subscribe(markDirty),
       roomQuality.subscribe(markDirty),
+      roomNotice.subscribe(markDirty),
       pdfStreaming.subscribe(markDirty),
       pdfResolution.subscribe(markDirty),
       pdfCacheSize.subscribe(markDirty),
@@ -244,8 +256,9 @@ export class MenuSystem extends createSystem({}) {
         m.changeVolume(0.1);
         break;
       case 'room':
-        // Flip between the two rooms; index.ts swaps the room when it changes.
-        roomChoice.value = roomChoice.value === 'apartment' ? 'glass' : 'apartment';
+        // Next room in the list (built-ins, then your custom scenes);
+        // index.ts swaps the room when it changes.
+        roomChoice.value = nextRoom(roomChoice.value);
         break;
       case 'quality':
         // High <-> Lite textures for model rooms (only that file downloads).
@@ -377,7 +390,8 @@ export class MenuSystem extends createSystem({}) {
           { id: 'close', label: 'Close' },
         ],
       ],
-      `♪ ${m.currentName}   ·   ${app.bookTitle}`,
+      // A room problem wins the footer: in the headset it's the only place to say it.
+      roomNotice.value ? `⚠ ${roomNotice.value}` : `♪ ${m.currentName}   ·   ${app.bookTitle}`,
     );
   }
 

@@ -200,7 +200,7 @@ export class BookSystem extends createSystem({}) {
       this.recenterPending = true;
     });
     // Line the room up with the (2D or VR) head once at startup too, so a
-    // room whose seat is not at the origin (the apartment sofa) starts right.
+    // room whose seat is not at the origin (most custom scenes) starts right.
     this.recenterPending = true;
     app.bookSystem = this; // handy for debugging: window.app.bookSystem
     this.world.scene.add(app.book.root);

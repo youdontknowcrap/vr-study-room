@@ -22,6 +22,8 @@ import { MenuSystem } from './menu/menu-system.js';
 import { PanelSystem } from './panel.js';
 import { StatsSystem } from './perf/stats-system.js';
 import { createRoom } from './room/create-room.js';
+import { isBuiltinRoom } from './room/room-config.js';
+import { loadSceneIndex } from './room/scene-loader.js';
 import { onRoomChange, switchRoom } from './room/room-switch.js';
 import {
   bookScale,
@@ -45,8 +47,10 @@ World.create(
   app.world = world;
 
   // --- Room --------------------------------------------------------------
-  // the sitcom apartment (a 3D model) by default, or the built-in glass-door
-  // room with the pool view (menu: "Room"). Both provide the same "desk".
+  // The built-in pool room by default, or a custom scene from the local
+  // scenes/ folder (menu: "Room"). Both provide the same "desk".
+  // Ask the server for its scene list FIRST, so the saved room can be found.
+  await loadSceneIndex();
   app.room = await createRoom(roomChoice.value, roomQuality.value);
   world.scene.add(app.room.area);
   // Desk height/tilt come from saved settings; re-apply when they change.
@@ -58,7 +62,7 @@ World.create(
   // Same for "Quality: High / Lite" (reloads the model room in that build).
   // (subscribe() also fires once right away; `shown` skips that first call.)
   // `shown` = what's on screen; quality only matters for model rooms.
-  const wanted = () => (roomChoice.value === 'glass' ? 'glass' : `${roomChoice.value}/${roomQuality.value}`);
+  const wanted = () => (isBuiltinRoom(roomChoice.value) ? roomChoice.value : `${roomChoice.value}/${roomQuality.value}`);
   let shown = wanted();
   let busy = false;
   const onRoomSetting = async () => {
