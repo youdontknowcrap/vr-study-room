@@ -239,12 +239,12 @@ to actions — **grab**, **select**, **turnPage**, **toggleMenu**,
 
 | Action | Controllers | Hands | Desktop |
 |---|---|---|---|
-| **Pick up the book** | **Squeeze (grip)** near it, or point at it and squeeze (it flies to your hand). Trigger works too. | Pinch near it / point + pinch | – |
-| **Swap hands** | While holding, squeeze with the other hand on the book | Pinch with the other hand | – |
+| **Pick up the book** | **Squeeze (grip)** near it, or point at it and squeeze (it flies to your hand). Trigger works too when the book is NOT held and you aim at its cover/spine/edge (on a page, trigger grabs the page). | Pinch the cover/spine/edge, near it or point + pinch | – |
+| **Swap hands** | While holding, **squeeze** with the other hand on the book. Squeeze only: the other hand's trigger never swaps. | – (pinch grabs pages while the book is held) | – |
 | **Put it down** | Let go over/near the reading stand: it lands there, open and readable. Let go anywhere else: it falls (lands on the floor, table or sofa). | Same | – |
 | In your hand | It keeps the angle of your grip (no auto-facing). | Same | – |
 | **Turn page** | Thumbstick flick left/right (either hand) | Swipe over the page, or poke the page's outer edge | ← / → keys |
-| **Drag a page** | Trigger on a page edge and pull it across (release past halfway = turn) | Pinch on a page edge and pull | – |
+| **Grab a page** | **Trigger** with your hand at a page, or aim the ray at it: the page follows your hand around the spine. Right page = forward, left page = back. Release past halfway = turn, else it falls back. A quick tap just flips it. Works with the book on the stand or in your other hand. The trigger of the hand holding the book does nothing. | Pinch a page (same rules; while the book is held, the free hand's pinch grabs pages) | – |
 | **Menu** | **B** or **Y** button | Poke or pinch the **☰ Menu** tab on the stand | **M** key, or click the tab |
 | Press a menu button | Point + trigger (or grip) | Poke with index fingertip, or point + pinch | Mouse click |
 | **Recenter** | Click the thumbstick | Menu → Recenter | **R** key |
@@ -317,7 +317,8 @@ src/
   book/
     pdf-pages.ts           pdf.js → small canvas textures, lazy + cached; stable book id
     book.ts                boxy book: covers, page blocks, spine, ribbon, page turns, intro
-    book-system.ts         grab / swap / drop / settle state machine, page drags, bring back
+    book-system.ts         grab / swap / drop / settle state machine, page grabs, bring back
+    page-grab.ts           ★ which press does what (page grab vs pick up vs swap), unit-tested
     book-physics.ts        tiny rigid-body sim for a dropped book (gravity, bounce, walls)
     reading-progress.ts    last-read page per book (localStorage)
   menu/

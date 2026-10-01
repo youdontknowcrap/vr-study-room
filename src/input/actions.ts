@@ -58,15 +58,26 @@ export class HandState {
 
   /**
    * GRAB = pick up / hold the book (controller grip "squeeze" is the main
-   * one; trigger and hand pinch also work). Also presses menu buttons.
+   * one; trigger and hand pinch also work while the book is NOT held, see
+   * book/page-grab.ts). Swapping hands is squeeze-only. Also presses menu
+   * buttons.
    */
   readonly grab = new ButtonAction();
   /**
-   * SELECT = the "fine" press: drag a page by its edge, press a button.
+   * SELECT = the "fine" press: grab a page and drag it, press a button.
    * Bound to trigger and hand pinch (NOT squeeze), so squeezing the book
    * always picks it up instead of dragging a page.
    */
   readonly select = new ButtonAction();
+
+  /**
+   * Raw "is this physical input down right now?" flags (after hysteresis).
+   * The book uses them so a hold only ends when the button that STARTED it
+   * is let go: pressing the trigger on the holding hand changes nothing.
+   */
+  squeezeDown = false;
+  triggerDown = false;
+  pinchDown = false;
 
   /** Mark this hand's current press as handled (both grab and select). */
   consumePress(): void {

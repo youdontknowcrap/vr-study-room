@@ -92,6 +92,9 @@ export class InputLayerSystem extends createSystem({}) {
       hand.rayValid = false;
       hand.indexTipValid = false;
       hand.kind = 'none';
+      hand.squeezeDown = false;
+      hand.triggerDown = false;
+      hand.pinchDown = false;
     }
 
     // 2) Read XR input sources (only exists while in VR / emulator).
@@ -134,6 +137,7 @@ export class InputLayerSystem extends createSystem({}) {
         if (source.hand) {
           hand.kind = 'hand';
           const pinch = this.readHand(frame, refSpace, source.hand, hand, mem);
+          hand.pinchDown = pinch;
           if (pinch && isBound('grab', 'hand.pinch')) raw[h].grab = 'pinch';
           if (pinch && isBound('select', 'hand.pinch')) raw[h].select = 'pinch';
         } else if (source.gamepad) {
@@ -201,6 +205,8 @@ export class InputLayerSystem extends createSystem({}) {
       trigger > (mem.triggerHeld ? TUNING.buttonRelease : TUNING.buttonPress);
     mem.squeezeHeld =
       squeeze > (mem.squeezeHeld ? TUNING.buttonRelease : TUNING.buttonPress);
+    hand.triggerDown = mem.triggerHeld;
+    hand.squeezeDown = mem.squeezeHeld;
     // Squeeze wins if both are down: it is the "real" grab button.
     if (isBound('grab', 'controller.trigger') && mem.triggerHeld) out.grab = 'trigger';
     if (isBound('grab', 'controller.squeeze') && mem.squeezeHeld) out.grab = 'squeeze';

@@ -15,14 +15,21 @@
  *              release over the desk, or for "Bring book back").
  *
  * Controls (bindings live in input/bindings.ts):
- *   GRAB (squeeze; trigger / hand pinch also work)
- *     - near the book, or pointing the ray at it from afar -> pick it up
- *       (from afar it flies into your hand). Works from desk or floor.
- *     - while one hand holds it, grab with the OTHER hand -> it swaps
- *       straight to that hand.
- *     - let go over / near the desk -> it lands open on the slanted top.
- *       Let go elsewhere -> it falls (and can be thrown a little).
- *   SELECT (trigger / pinch) on the outer edge of a page -> drag that page.
+ *   (Full press rules + reasons: page-grab.ts. Unit-tested.)
+ *   SQUEEZE near the book, or pointing the ray at it -> pick it up (from
+ *     afar it flies into your hand). Works from desk, table or floor.
+ *     While one hand holds it, SQUEEZE with the OTHER hand -> it swaps to
+ *     that hand. Squeeze is the ONLY way to swap.
+ *   TRIGGER / PINCH
+ *     - at (or aimed at) a PAGE -> grab that page and drag it around the
+ *       spine (right page forward, left page back). Let go past halfway ->
+ *       it turns, else it falls back. A quick tap just flips it. Works with
+ *       the book on the stand or in your other hand.
+ *     - on the cover / spine / edge of a book that is NOT held -> pick it
+ *       up (as with squeeze). While the book is held: nothing (no swap).
+ *     - on the hand that HOLDS the book: nothing.
+ *   Let go (of the button that picked it up) over / near the desk -> it
+ *     lands open on the slanted top. Elsewhere -> it falls (throwable).
  *   turnPage (thumbstick flick, hand swipe/poke, arrow keys, menu) -> turn.
  *   recenter -> room re-faces you; a book on the floor comes back too.
  *   bringBookBack (menu, B key) -> the book glides back onto the desk.
@@ -37,7 +44,8 @@ import {
   Raycaster,
   Vector3,
 } from '@iwsdk/core';
-import { actions, type Handedness, type HandState } from '../input/actions.js';
+import { actions, type Handedness, type HandState, type PressSource } from '../input/actions.js';
+import { decidePress, isQuickTap, nearPageSide, rayDragX, rayPageHit } from './page-grab.js';
 import { app } from '../app.js';
 import { bookScale } from '../settings.js';
 import { getHeadPose } from '../room/head-pose.js';
@@ -51,8 +59,6 @@ interface TableSurface extends Surface {
 }
 
 // ---- Tuning ---------------------------------------------------------------
-/** Outer part of each page (fraction of page width) where SELECT drags a page. */
-const EDGE_ZONE = 0.45;
 /** How close (m) your hand must be to the book's box to grab it directly. */
 const NEAR_GRAB_MARGIN = 0.05;
 /** Farthest a ray grab reaches (m). The whole room fits. */
@@ -84,6 +90,8 @@ type BookState =
       /** 0 -> 1 while flying into the hand after a ray grab (1 = arrived). */
       arrive: number;
       lostFor: number;
+      /** The button that picked it up; the hold ends when THAT one is let go. */
+      via: PressSource;
     }
   | { kind: 'falling' }
   | {
@@ -115,6 +123,8 @@ const qDelta = new Quaternion();
 const ONE = new Vector3(1, 1, 1);
 const UP = new Vector3(0, 1, 0);
 const raycaster = new Raycaster();
+const rayO = new Vector3();
+const rayD = new Vector3();
 const bounds = new Box3();
 /** Book lying flat on the desk, top of the pages pointing away from you. */
 const DESK_HOME_QUAT = new Quaternion().setFromEuler(new Euler(-Math.PI / 2, 0, 0));
@@ -126,6 +136,14 @@ export class BookSystem extends createSystem({}) {
   private readonly body = new FallingBody();
   /** Which hand is dragging a page (null = none). */
   private pageDragHand: Handedness | null = null;
+  /** The current page drag: by ray (aimed) or by the hand's position? */
+  private pageDragByRay = false;
+  /** Seconds since the page grab started, and where (model x) it started. */
+  private pageDragTime = 0;
+  private pageDragStartX = 0;
+  private pageDragLastX = 0;
+  private pageDragMoved = 0;
+  private pageDragDir: 1 | -1 = 1;
   /** Smoothed book velocity + spin while held (for throwing). */
   private readonly velocity = new Vector3();
   private readonly spin = new Vector3();
@@ -265,7 +283,7 @@ export class BookSystem extends createSystem({}) {
     if (actions.turnPage !== 0) book.turnPage(actions.turnPage);
 
     // 4) Hands: page drags, grabs, swaps.
-    for (const h of ['left', 'right'] as const) this.handleHand(h, actions.hands[h]);
+    for (const h of ['left', 'right'] as const) this.handleHand(h, actions.hands[h], delta);
 
     // 5) Move the book according to its state.
     this.updateState(delta);
@@ -277,54 +295,117 @@ export class BookSystem extends createSystem({}) {
   // Hands
   // ------------------------------------------------------------------
 
-  private handleHand(h: Handedness, hand: HandState): void {
+  private handleHand(h: Handedness, hand: HandState, dt: number): void {
     const book = app.book;
     // Continue (or finish) a page drag.
     if (this.pageDragHand === h) {
+      const x = this.pageDragX(hand);
       if (hand.select.held && book.isDragging) {
-        book.dragTo(book.toModel(hand.grabPoint, local).x);
+        // At most 1/30 s per frame counts toward "quick tap": a single
+        // hitch frame (or a slow emulator) must not turn a tap into a drag.
+        this.pageDragTime += Math.min(dt, 1 / 30);
+        this.pageDragMoved = Math.max(this.pageDragMoved, Math.abs(x - this.pageDragStartX) * book.scale);
+        book.dragTo(this.relativeDragX(x));
       } else {
-        book.endDrag();
+        // Quick tap on a page = flip it; a real drag decides by halfway.
+        if (isQuickTap(this.pageDragTime, this.pageDragMoved)) book.completeDrag();
+        else book.endDrag();
         this.pageDragHand = null;
       }
       return;
     }
     const s = this.state;
-    if (s.kind === 'held' && s.hand === h) return; // this hand is busy holding
-
-    // SELECT on a page edge -> drag the page (book at rest or in the other hand).
-    if (hand.select.pressed && !hand.select.consumed && this.tryPageDrag(h, hand)) {
-      hand.consumePress();
+    const heldByThis = s.kind === 'held' && s.hand === h;
+    const heldByOther = s.kind === 'held' && s.hand !== h;
+    if (heldByThis) {
+      // The holding hand's presses never change the hold (or grab pages).
+      if (hand.grab.pressed || hand.select.pressed) hand.consumePress();
       return;
     }
-    // GRAB on / at the book -> pick up, or swap from the other hand.
-    if (hand.grab.pressed && !hand.grab.consumed) {
-      const near = this.isNear(hand);
-      if (near || this.rayHitsBook(hand)) {
-        this.grab(h, hand, near);
-        hand.consumePress();
-      }
+
+    // One decision per fresh press (see page-grab.ts for the rules).
+    // SELECT (trigger/pinch) and GRAB fire on the same frame for a trigger
+    // press; squeeze only fires GRAB.
+    const fine = hand.select.pressed && !hand.select.consumed;
+    const coarse = hand.grab.pressed && !hand.grab.consumed;
+    if (!fine && !coarse) return;
+    const via: PressSource = fine ? hand.select.via : hand.grab.via;
+    const page = s.kind === 'resting' || s.kind === 'held' ? this.pageTarget(hand) : null;
+    const near = this.isNear(hand);
+    const onBook = near || this.rayHitsBook(hand);
+    const intent = decidePress({ via, heldByThis, heldByOther, onPage: page !== null, onBook });
+    if (intent === 'pageGrab' && page && book.beginDrag(page.side)) {
+      this.pageDragHand = h;
+      this.pageDragByRay = page.byRay;
+      this.pageDragTime = 0;
+      this.pageDragMoved = 0;
+      this.pageDragDir = page.side;
+      // For a ray drag, measure the start on the same plane the drag uses.
+      const startX = page.byRay && this.rayInModel(hand) ? (rayDragX(rayO, rayD, book.surface) ?? page.x) : page.x;
+      this.pageDragStartX = this.pageDragLastX = startX;
+      book.dragTo(this.relativeDragX(startX));
+    } else if (intent === 'pickUp') {
+      this.grab(h, hand, near, via);
     }
+    // Handled either way: a trigger on a page that can't turn (first/last
+    // page) or a trigger next to a held book must NOT fall through to a grab.
+    hand.consumePress();
   }
 
-  private tryPageDrag(h: Handedness, hand: HandState): boolean {
-    const s = this.state;
-    if (s.kind !== 'resting' && s.kind !== 'held') return false;
+  /**
+   * Is this hand at a page (grab point within a few cm of it) or aiming its
+   * ray at one? Returns the side (+1 right = forward, -1 left = back) and
+   * the model-space x where it touches.
+   */
+  private pageTarget(hand: HandState): { side: 1 | -1; x: number; byRay: boolean } | null {
     const book = app.book;
-    const p = book.toModel(hand.grabPoint, local);
     const sf = book.surface;
-    const above = p.z - (Math.abs(p.x) * sf.slope + sf.baseZ);
-    const onPage =
-      Math.abs(p.x) < sf.halfWidth * 1.08 &&
-      Math.abs(p.y) < sf.halfHeight * 1.1 &&
-      above > -0.03 &&
-      above < 0.07 / book.scale;
-    const onEdge = Math.abs(p.x) > sf.halfWidth * (1 - EDGE_ZONE);
-    if (onPage && onEdge && book.beginDrag(p.x > 0 ? 1 : -1)) {
-      this.pageDragHand = h;
-      return true;
+    const p = book.toModel(hand.grabPoint, local);
+    const nearSide = nearPageSide(p, sf, book.scale);
+    if (nearSide !== 0) return { side: nearSide, x: p.x, byRay: false };
+    if (!this.rayInModel(hand)) return null;
+    const hit = rayPageHit(rayO, rayD, sf);
+    if (!hit || hit.t * book.scale > RAY_GRAB_DISTANCE) return null;
+    return { side: hit.x > 0 ? 1 : -1, x: hit.x, byRay: true };
+  }
+
+  /**
+   * The page you grab starts flat, wherever on it you grabbed: only MOVING
+   * your hand toward the other side lifts it. Grabbed at startX, the page
+   * is fully turned when your hand reaches the far edge of the spread.
+   * Returns the x for Book.dragTo (which maps x = +w -> lying right,
+   * x = -w -> lying left).
+   */
+  private relativeDragX(x: number): number {
+    const w = app.book.surface.halfWidth;
+    const x0 = clamp(this.pageDragStartX, -w * 0.98, w * 0.98);
+    // leafP: 0 = page lying on the right, 1 = lying on the left.
+    const p =
+      this.pageDragDir === 1
+        ? clamp((x0 - x) / (x0 + w), 0, 1) // right page: drag it leftward
+        : 1 - clamp((x - x0) / (w - x0), 0, 1); // left page: drag it rightward
+    return w - 2 * w * p;
+  }
+
+  /** Model-space x of the hand during a page drag (hand position, or where the ray points). */
+  private pageDragX(hand: HandState): number {
+    const book = app.book;
+    if (!this.pageDragByRay) return book.toModel(hand.grabPoint, local).x;
+    if (this.rayInModel(hand)) {
+      const x = rayDragX(rayO, rayD, book.surface);
+      if (x !== null) this.pageDragLastX = x;
     }
-    return false;
+    return this.pageDragLastX;
+  }
+
+  /** The hand's pointing ray in book MODEL space -> rayO / rayD. */
+  private rayInModel(hand: HandState): boolean {
+    if (!hand.rayValid) return false;
+    const model = app.book.model;
+    model.updateWorldMatrix(true, false);
+    model.worldToLocal(rayO.copy(hand.rayOrigin));
+    model.worldToLocal(rayD.copy(hand.rayOrigin).add(hand.rayDirection)).sub(rayO).normalize();
+    return true;
   }
 
   /** Is the hand's grab point inside (or within a few cm of) the book's box? */
@@ -353,7 +434,7 @@ export class BookSystem extends createSystem({}) {
    *  near = false (ray grab from afar): it flies into the hand and ends in
    *  the default IN_HAND_OFFSET pose.
    */
-  private grab(h: Handedness, hand: HandState, near: boolean): void {
+  private grab(h: Handedness, hand: HandState, near: boolean, via: PressSource): void {
     if (this.pageDragHand) {
       app.book.endDrag();
       this.pageDragHand = null;
@@ -376,7 +457,7 @@ export class BookSystem extends createSystem({}) {
     }
     this.fromPos.copy(root.position);
     this.fromQuat.copy(root.quaternion);
-    this.state = { kind: 'held', hand: h, offset, arrive: near ? 1 : 0, lostFor: 0 };
+    this.state = { kind: 'held', hand: h, offset, arrive: near ? 1 : 0, lostFor: 0, via };
     this.trackedValid = false;
   }
 
@@ -422,7 +503,9 @@ export class BookSystem extends createSystem({}) {
     const s = this.state;
     if (s.kind === 'held') {
       const hand = actions.hands[s.hand];
-      if (!hand.grab.held && hand.gripValid) {
+      // Let go = the button that picked the book up is released (pressing
+      // or releasing the OTHER buttons on this hand changes nothing).
+      if (!sourceDown(hand, s.via) && hand.gripValid) {
         this.release();
         return;
       }
@@ -654,6 +737,14 @@ export class BookSystem extends createSystem({}) {
     root.position.copy(parent.worldToLocal(pos));
     root.quaternion.copy(parent.getWorldQuaternion(startQuat).invert().multiply(quat));
   }
+}
+
+/** Is the physical input that started a press still down? */
+function sourceDown(hand: HandState, via: PressSource): boolean {
+  if (via === 'squeeze') return hand.squeezeDown;
+  if (via === 'trigger') return hand.triggerDown;
+  if (via === 'pinch') return hand.pinchDown;
+  return hand.grab.held;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
