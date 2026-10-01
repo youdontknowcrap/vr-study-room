@@ -4,7 +4,7 @@
  * around the open spread stays on the GPU.
  */
 import { CanvasTexture, SRGBColorSpace, type Texture } from '@iwsdk/core';
-import type { BookPages } from './book-pages.js';
+import { textureBytes, type BookPages, type PageStats } from './book-pages.js';
 import {
   EPUB_ASPECT,
   EPUB_FONTS,
@@ -34,6 +34,7 @@ export class EpubPages implements BookPages {
   private decoded = new Map<string, Decoded | null>();
   private textures = new Map<number, Texture>();
   private pending = new Set<number>();
+  private lastRenderMs = 0;
 
   static async load(source: EpubSource, titleFallback: string): Promise<EpubPages> {
     const data = 'url' in source ? new Uint8Array(await (await fetch(source.url)).arrayBuffer()) : toBytes(source.data);
@@ -73,6 +74,13 @@ export class EpubPages implements BookPages {
     }
   }
 
+  /** For the Big PDF stats readout: EPUB pages are small, fixed-size canvases. */
+  getStats(): PageStats {
+    let bytes = 0;
+    for (const tex of this.textures.values()) bytes += textureBytes(tex);
+    return { lastRenderMs: this.lastRenderMs, cachedPages: this.textures.size, textureBytes: bytes, pending: this.pending.size, cancelled: 0 };
+  }
+
   dispose(): void {
     for (const tex of this.textures.values()) tex.dispose();
     this.textures.clear();
@@ -88,6 +96,7 @@ export class EpubPages implements BookPages {
   private async render(index: number): Promise<void> {
     if (this.pending.has(index) || !this.laid[index]) return;
     this.pending.add(index);
+    const t0 = performance.now();
     try {
       const page = this.laid[index];
       await this.ensureImages(page.ops);
@@ -110,6 +119,7 @@ export class EpubPages implements BookPages {
         return;
       }
       this.textures.set(index, tex);
+      this.lastRenderMs = Math.round(performance.now() - t0);
       this.onPageReady(index);
     } catch (err) {
       console.warn(`[epub] failed to render page ${index + 1}`, err);

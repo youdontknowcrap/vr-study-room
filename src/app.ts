@@ -15,6 +15,7 @@ import { PdfPages, type PdfSource } from './book/pdf-pages.js';
 import { loadProgress } from './book/reading-progress.js';
 import type { StudyRoom } from './room/room-types.js';
 import type { LaunchOverlay } from './ui2d/launch-overlay.js';
+import { pdfStreaming } from './settings.js';
 
 export const SAMPLE_BOOK_URL = `${import.meta.env.BASE_URL}books/sample-book.pdf`;
 
@@ -85,8 +86,27 @@ export function loadSampleBook(): Promise<void> {
   return loadPdf({ url: SAMPLE_BOOK_URL }, 'Sample booklet');
 }
 
-/** A file from the page picker. PDFs stream from a blob URL; EPUBs are unzipped here. */
+/**
+ * The last book file you picked, so the Big PDF menu's "Reopen book" can
+ * open it again (to apply the Streaming toggle, or to test memory on reopen).
+ * WHY keeping it is cheap: a File is only a handle to bytes on disk, not the
+ * bytes themselves.
+ */
+let lastFile: File | null = null;
+
+/** True when the open book came from the file picker (so Streaming applies). */
+export function hasPickedFile(): boolean {
+  return lastFile !== null;
+}
+
+/** Reopen the last picked file (or the sample book if none). */
+export function reopenBook(): Promise<void> {
+  return lastFile ? loadBookFile(lastFile) : loadSampleBook();
+}
+
+/** A file from the page picker. PDFs are read in pieces or via a blob URL; EPUBs are unzipped here. */
 export async function loadBookFile(file: File): Promise<void> {
+  lastFile = file;
   const title = file.name.replace(/\.(pdf|epub)$/i, '');
   const kind = await bookKind(file);
   if (kind === 'epub') {
@@ -94,8 +114,16 @@ export async function loadBookFile(file: File): Promise<void> {
     return;
   }
   if (kind === 'pdf') {
-    const url = URL.createObjectURL(file);
-    await loadPdf({ url, ownedUrl: url }, title);
+    if (pdfStreaming.value) {
+      // [1 STREAMING] Hand pdf.js the File itself; it reads byte ranges on
+      // demand (see FileRangeTransport in pdf-pages.ts). No full copy.
+      await loadPdf({ file }, title);
+    } else {
+      // Old way: a blob URL. pdf.js can't do range requests on blob: URLs,
+      // so it reads the whole file into its worker's memory.
+      const url = URL.createObjectURL(file);
+      await loadPdf({ url, ownedUrl: url }, title);
+    }
     return;
   }
   app.overlay.setStatus(`“${file.name}” isn’t a PDF or an EPUB.`);

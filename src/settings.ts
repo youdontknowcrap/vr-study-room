@@ -118,3 +118,90 @@ function readQuality(): RoomQuality {
 }
 export const roomQuality = signal<RoomQuality>(readQuality());
 roomQuality.subscribe((v) => write(KEY_ROOM_QUALITY, v));
+
+// ---------------------------------------------------------------------------
+// BIG PDF / PERFORMANCE toggles (menu: "Big PDF ▸")
+// ---------------------------------------------------------------------------
+// WHY these exist: a 287 MB scanned book (every page = ~17 megapixels of JPEG
+// + JBIG2 layers) freezes a Quest 2. Each toggle below switches ONE fix on or
+// off so you can feel/measure what each one buys you in the headset. Each is
+// its own localStorage key so you can A/B test them independently.
+// RAPID ITERATION NOTE: these are deliberately simple signals. When the
+// experiments are done, keep the winners as plain constants and delete the rest.
+
+const KEY_PDF_STREAMING = 'vrStudyRoom.pdfStreaming';
+const KEY_PDF_RES = 'vrStudyRoom.pdfResolution';
+const KEY_PDF_CACHE = 'vrStudyRoom.pdfCache';
+const KEY_PDF_QUEUE = 'vrStudyRoom.pdfRenderQueue';
+const KEY_PDF_PREVIEW = 'vrStudyRoom.pdfPreview';
+const KEY_PERF_STATS = 'vrStudyRoom.perfStats';
+
+/** A boolean setting stored as "1"/"0". */
+function boolSignal(key: string, fallback: boolean) {
+  let initial = fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === '1' || raw === '0') initial = raw === '1';
+  } catch {
+    /* storage disabled: use the default */
+  }
+  const sig = signal(initial);
+  sig.subscribe((v) => write(key, v ? '1' : '0'));
+  return sig;
+}
+
+/** A setting that must be one of a fixed list of numbers (cycled by -/+ buttons). */
+function levelSignal(key: string, levels: readonly number[], fallback: number) {
+  let initial = fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    // Careful: Number(null) is 0, and 0 is a real level ("Old" cache), so a
+    // missing key must be checked BEFORE converting.
+    const v = raw === null ? NaN : Number(raw);
+    if (levels.includes(v)) initial = v; // ignore stale/unknown values
+  } catch {
+    /* ignore */
+  }
+  const sig = signal(initial);
+  sig.subscribe((v) => write(key, String(v)));
+  return sig;
+}
+
+/** Move a level setting one step through its list (stops at the ends). */
+export function stepLevel(sig: { value: number }, levels: readonly number[], dir: 1 | -1): void {
+  const i = levels.indexOf(sig.value);
+  const next = Math.min(levels.length - 1, Math.max(0, (i < 0 ? 0 : i) + dir));
+  sig.value = levels[next];
+}
+
+/**
+ * 1. STREAMING LOAD. On = pdf.js reads only the byte ranges it needs from the
+ * File (File.slice), so a 287 MB file never sits in memory as one big copy.
+ * Off = the old way (blob URL, which pdf.js downloads in full).
+ * Takes effect the next time a book is opened (menu: "Reopen book").
+ */
+export const pdfStreaming = boolSignal(KEY_PDF_STREAMING, true);
+
+/**
+ * 2. PAGE RESOLUTION CAP: pixels on the page's LONG side.
+ * 640 = the old behaviour (pages were rendered 640 px tall).
+ * Memory grows with the SQUARE of this: 2048 is ~10x the pixels of 640.
+ */
+export const PDF_RES_LEVELS = [640, 800, 1200, 1600, 2048] as const;
+export const pdfResolution = levelSignal(KEY_PDF_RES, PDF_RES_LEVELS, 1200);
+
+/**
+ * 3. PAGE CACHE SIZE: how many rendered pages to keep. 0 = "Old": the
+ * original rule (keep anything within 6 pages of the spread, up to 13).
+ */
+export const PDF_CACHE_LEVELS = [2, 4, 6, 8, 0] as const;
+export const pdfCacheSize = levelSignal(KEY_PDF_CACHE, PDF_CACHE_LEVELS, 6);
+
+/** 4. RENDER QUEUE: one render at a time, newest request wins, stale ones cancelled. */
+export const pdfRenderQueue = boolSignal(KEY_PDF_QUEUE, true);
+
+/** 5. BLURRY-FIRST PREVIEW: a quick ~360 px pass before the sharp one. */
+export const pdfPreview = boolSignal(KEY_PDF_PREVIEW, true);
+
+/** On-screen stats readout (render ms, pages cached, texture MB, JS heap). */
+export const perfStats = boolSignal(KEY_PERF_STATS, false);

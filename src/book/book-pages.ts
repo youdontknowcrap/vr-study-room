@@ -4,6 +4,23 @@
  */
 import type { Texture } from '@iwsdk/core';
 
+/**
+ * Numbers for the on-screen stats readout (menu: Big PDF ▸ Stats).
+ * Optional so a page source that doesn't track them still compiles.
+ */
+export interface PageStats {
+  /** How long the last finished page render took, in milliseconds. */
+  lastRenderMs: number;
+  /** Rendered pages currently held (each one = a canvas + a GPU texture). */
+  cachedPages: number;
+  /** Rough GPU memory of those textures in bytes (w x h x 4, +1/3 for mipmaps). */
+  textureBytes: number;
+  /** Renders still waiting their turn (render queue) or running. */
+  pending: number;
+  /** Renders cancelled because you flipped past them (render queue). */
+  cancelled: number;
+}
+
 export interface BookPages {
   readonly id: string;
   readonly title: string;
@@ -14,4 +31,15 @@ export interface BookPages {
   get(index: number): Texture | null;
   keepAround(center: number): void;
   dispose(): void;
+  getStats?(): PageStats;
+}
+
+/**
+ * Rough GPU bytes of a canvas texture. WHY x4/3: three.js builds mipmaps
+ * (smaller copies used when the page is far away / tilted), which add
+ * 1/4 + 1/16 + ... = about one third on top of the full-size image.
+ */
+export function textureBytes(tex: Texture): number {
+  const img = tex.image as { width?: number; height?: number } | undefined;
+  return ((img?.width ?? 0) * (img?.height ?? 0) * 4 * 4) / 3;
 }

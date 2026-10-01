@@ -295,6 +295,11 @@ export class Book {
   get bookId(): string {
     return this.pages?.id ?? '';
   }
+  /** The open document's pages (for the stats readout and tests). */
+  get pageSource(): BookPages | null {
+    return this.pages;
+  }
+
   get currentLeft(): number {
     return this.left;
   }
@@ -450,22 +455,27 @@ export class Book {
   }
 
   private beginTurn(dir: TurnDir, dragging: boolean): void {
+    this.applyTurnMats(dir);
+    this.leaf.visible = true;
+    this.turn = { dir, dragging, target: dir === 1 ? 1 : 0 };
+    this.leafP = dir === 1 ? 0 : 1;
+  }
+
+  /** Point the leaf (both sides) and the uncovered page at their textures. */
+  private applyTurnMats(dir: TurnDir | undefined = this.turn?.dir): void {
     const L = this.left;
+    if (dir === undefined) return;
     if (dir === 1) {
       // Lift the right page: front = L+1, back = L+2, uncover L+3 beneath.
       this.setMat(this.leafFront, L + 1);
       this.setMat(this.leafBack, L + 2);
       this.setMat(this.rightPage, L + 3);
-      this.leafP = 0;
     } else {
       // Lift the left page: back = L, front = L-1, uncover L-2 beneath.
       this.setMat(this.leafFront, L - 1);
       this.setMat(this.leafBack, L);
       this.setMat(this.leftPage, L - 2);
-      this.leafP = 1;
     }
-    this.leaf.visible = true;
-    this.turn = { dir, dragging, target: dir === 1 ? 1 : 0 };
   }
 
   /** Called when the leaf reaches its target. */
@@ -603,7 +613,14 @@ export class Book {
         }
       }
     } else if (this.turn) {
-      return; // mid-turn materials are managed by beginTurn
+      // Mid-turn: re-point the turning leaf and the page underneath at the
+      // newest textures. WHY: with the blurry-first preview (and the page
+      // cache freeing replaced textures) a page can be upgraded while it is
+      // flying; the leaf must not keep showing the freed preview. No
+      // keepAround() here: evicting pages mid-animation could pull a texture
+      // out from under the leaf.
+      this.applyTurnMats();
+      return;
     }
     this.setMat(this.leftPage, this.left);
     this.setMat(this.rightPage, this.left + 1);
