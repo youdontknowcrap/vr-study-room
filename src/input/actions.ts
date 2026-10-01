@@ -26,7 +26,12 @@ export class ButtonAction {
    * Example: pinching a menu button should not ALSO grab the book behind it.
    */
   consumed = false;
+  /** Which physical input started the current press (for "squeeze vs trigger" rules). */
+  via: PressSource = 'none';
 }
+
+/** Physical source of a grab/select press. */
+export type PressSource = 'none' | 'squeeze' | 'trigger' | 'pinch';
 
 /** Everything we know about one hand (or the controller held in it). */
 export class HandState {
@@ -51,8 +56,23 @@ export class HandState {
   readonly indexTip = new Vector3();
   indexTipValid = false;
 
-  /** The GRAB action for this hand. */
+  /**
+   * GRAB = pick up / hold the book (controller grip "squeeze" is the main
+   * one; trigger and hand pinch also work). Also presses menu buttons.
+   */
   readonly grab = new ButtonAction();
+  /**
+   * SELECT = the "fine" press: drag a page by its edge, press a button.
+   * Bound to trigger and hand pinch (NOT squeeze), so squeezing the book
+   * always picks it up instead of dragging a page.
+   */
+  readonly select = new ButtonAction();
+
+  /** Mark this hand's current press as handled (both grab and select). */
+  consumePress(): void {
+    this.grab.consumed = true;
+    this.select.consumed = true;
+  }
 
   constructor(readonly handedness: Handedness) {}
 }
@@ -65,8 +85,15 @@ export interface SwipeZone {
   object: Object3D;
   halfWidth: number;
   halfHeight: number;
-  /** How far in front/behind the plane (local z) the fingertip may be. */
+  /** How far in front/behind the page surface (local z) the fingertip may be. */
   maxDistance: number;
+  /**
+   * The pages are not flat: the open book is a shallow "V". The page
+   * surface height (local z) at sideways position x is about
+   *   surfaceZ = |x| * slope + baseZ
+   */
+  slope: number;
+  baseZ: number;
   /** Which hands may swipe (e.g. not the hand holding the book). */
   allowLeft: boolean;
   allowRight: boolean;
@@ -83,6 +110,8 @@ export const actions = {
   toggleMenu: false,
   /** True for one frame when the play area should re-center. */
   recenter: false,
+  /** True for one frame when the book should fly back to the desk. */
+  bringBookBack: false,
   /** Set by the book system; read by the swipe detector. */
   swipeZone: null as SwipeZone | null,
 };

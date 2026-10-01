@@ -27,13 +27,21 @@ export type PhysicalInput =
   // --- Hand tracking (WebXR XRHand joints) ---
   | 'hand.pinch' // thumb tip touches index tip
   | 'hand.swipe' // fast sideways fingertip motion over the page
+  | 'hand.poke' // index fingertip taps the outer edge of a page
   // --- Desktop keyboard (laptop testing without a headset) ---
   | 'keyboard.arrows' // ArrowLeft / ArrowRight
   | 'keyboard.m' // M key
-  | 'keyboard.r'; // R key
+  | 'keyboard.r' // R key
+  | 'keyboard.b'; // B key
 
 /** Every action the app understands. */
-export type ActionName = 'grab' | 'turnPage' | 'toggleMenu' | 'recenter';
+export type ActionName =
+  | 'grab'
+  | 'select'
+  | 'turnPage'
+  | 'toggleMenu'
+  | 'recenter'
+  | 'bringBookBack';
 
 /**
  * Set this to true to rehearse the hands-only competition build:
@@ -42,15 +50,21 @@ export type ActionName = 'grab' | 'turnPage' | 'toggleMenu' | 'recenter';
 export const HANDS_ONLY = false;
 
 const ALL_BINDINGS: Record<ActionName, PhysicalInput[]> = {
-  // grab = pick up the book, drag a page corner, or press a menu button
+  // grab = pick up / hold / swap the book (squeeze is the main one), or
+  // press a menu button. Trigger + pinch are kept as alternatives.
   grab: ['controller.squeeze', 'controller.trigger', 'hand.pinch'],
+  // select = drag a page by its outer edge, press a menu button.
+  // Deliberately NOT squeeze: squeezing the book should always grab it.
+  select: ['controller.trigger', 'hand.pinch'],
   // turnPage = +1 next page / -1 previous page
-  turnPage: ['controller.thumbstick', 'hand.swipe', 'keyboard.arrows'],
+  turnPage: ['controller.thumbstick', 'hand.swipe', 'hand.poke', 'keyboard.arrows'],
   // toggleMenu = open / close the floating menu
   // (hands can also poke/pinch the small "Menu" tab on the desk)
   toggleMenu: ['controller.buttonBY', 'keyboard.m'],
   // recenter = move the desk + book in front of where you are looking
   recenter: ['controller.stickPress', 'keyboard.r'],
+  // bringBookBack = the book flies back onto the desk (also a menu item)
+  bringBookBack: ['keyboard.b'],
 };
 
 /** The bindings actually in effect (controllers stripped when HANDS_ONLY). */
@@ -86,6 +100,10 @@ export const TUNING = {
   stickRearm: 0.3,
   /** Fingertip sideways speed (m/s) over the page that counts as a swipe. */
   swipeSpeed: 0.6,
-  /** Seconds to ignore further swipes after one fires. */
+  /** Seconds to ignore further swipes/pokes after one fires. */
   swipeCooldown: 0.6,
+  /** Poke: fingertip within this distance (m) of the page surface counts as touching. */
+  pokeTouch: 0.012,
+  /** Poke: outer fraction of a page that reacts (0.25 = outer quarter). */
+  pokeEdge: 0.25,
 } as const;
