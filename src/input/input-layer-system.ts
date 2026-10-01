@@ -21,6 +21,7 @@ import {
   type ButtonAction,
   type Handedness,
   type HandState,
+  type PressSource,
 } from './actions.js';
 import { isBound, TUNING } from './bindings.js';
 
@@ -31,10 +32,18 @@ const tmpMat = new Matrix4();
 const playerQuat = new Quaternion();
 const thumbTip = new Vector3();
 
+/** Raw result of reading one hand this frame. */
+interface RawPress {
+  grab: PressSource; // 'none' or what is holding grab down
+  select: PressSource;
+}
+
 /** Per-hand memory that must survive between frames. */
 interface HandMemory {
-  grabHeld: boolean; // grab state last frame (to detect edges)
+  triggerHeld: boolean; // hysteresis state for the analog trigger
+  squeezeHeld: boolean; // ...and for the analog grip
   pinching: boolean; // hysteresis state for pinch
+  pokeArmed: boolean; // fingertip must leave the page edge before the next poke
   stickArmed: boolean; // thumbstick must return to center before next flick
   prevBY: boolean; // B/Y button last frame
   prevStickPress: boolean;
@@ -47,8 +56,10 @@ const memory: Record<Handedness, HandMemory> = {
 };
 function freshMemory(): HandMemory {
   return {
-    grabHeld: false,
+    triggerHeld: false,
+    squeezeHeld: false,
     pinching: false,
+    pokeArmed: true,
     stickArmed: true,
     prevBY: false,
     prevStickPress: false,
@@ -66,10 +77,14 @@ export class InputLayerSystem extends createSystem({}) {
     actions.turnPage = 0;
     actions.toggleMenu = false;
     actions.recenter = false;
+    actions.bringBookBack = false;
     swipeCooldown = Math.max(0, swipeCooldown - delta);
     frameDelta = Math.max(delta, 1e-3);
 
-    const rawGrab: Record<Handedness, boolean> = { left: false, right: false };
+    const raw: Record<Handedness, RawPress> = {
+      left: { grab: 'none', select: 'none' },
+      right: { grab: 'none', select: 'none' },
+    };
     for (const h of ['left', 'right'] as const) {
       const hand = actions.hands[h];
       hand.tracked = false;
@@ -118,10 +133,12 @@ export class InputLayerSystem extends createSystem({}) {
 
         if (source.hand) {
           hand.kind = 'hand';
-          rawGrab[h] = this.readHand(frame, refSpace, source.hand, hand, mem);
+          const pinch = this.readHand(frame, refSpace, source.hand, hand, mem);
+          if (pinch && isBound('grab', 'hand.pinch')) raw[h].grab = 'pinch';
+          if (pinch && isBound('select', 'hand.pinch')) raw[h].select = 'pinch';
         } else if (source.gamepad) {
           hand.kind = 'controller';
-          rawGrab[h] = this.readController(source.gamepad, hand, mem);
+          this.readController(source.gamepad, hand, mem, raw[h]);
         }
         hand.tracked = hand.gripValid || hand.rayValid;
       }
@@ -139,10 +156,14 @@ export class InputLayerSystem extends createSystem({}) {
     if (isBound('recenter', 'keyboard.r') && kb.getKeyDown('KeyR')) {
       actions.recenter = true;
     }
+    if (isBound('bringBookBack', 'keyboard.b') && kb.getKeyDown('KeyB')) {
+      actions.bringBookBack = true;
+    }
 
     // 4) Turn raw "is it held?" into held/pressed/released edges.
     for (const h of ['left', 'right'] as const) {
-      updateButton(actions.hands[h].grab, rawGrab[h], memory[h]);
+      updateButton(actions.hands[h].grab, raw[h].grab);
+      updateButton(actions.hands[h].select, raw[h].select);
     }
   }
 
@@ -168,16 +189,22 @@ export class InputLayerSystem extends createSystem({}) {
     gp: Gamepad,
     hand: HandState,
     mem: HandMemory,
-  ): boolean {
+    out: RawPress,
+  ): void {
     hand.grabPoint.copy(hand.gripValid ? hand.gripPosition : hand.rayOrigin);
 
     // Analog buttons with hysteresis: press above 0.6, release below 0.4.
-    const threshold = mem.grabHeld ? TUNING.buttonRelease : TUNING.buttonPress;
+    // Each button keeps its own state so they don't disturb each other.
     const trigger = gp.buttons[0]?.value ?? 0;
     const squeeze = gp.buttons[1]?.value ?? 0;
-    let grab = false;
-    if (isBound('grab', 'controller.trigger') && trigger > threshold) grab = true;
-    if (isBound('grab', 'controller.squeeze') && squeeze > threshold) grab = true;
+    mem.triggerHeld =
+      trigger > (mem.triggerHeld ? TUNING.buttonRelease : TUNING.buttonPress);
+    mem.squeezeHeld =
+      squeeze > (mem.squeezeHeld ? TUNING.buttonRelease : TUNING.buttonPress);
+    // Squeeze wins if both are down: it is the "real" grab button.
+    if (isBound('grab', 'controller.trigger') && mem.triggerHeld) out.grab = 'trigger';
+    if (isBound('grab', 'controller.squeeze') && mem.squeezeHeld) out.grab = 'squeeze';
+    if (isBound('select', 'controller.trigger') && mem.triggerHeld) out.select = 'trigger';
 
     // Thumbstick flick left/right -> turn page (edge-triggered).
     if (isBound('turnPage', 'controller.thumbstick')) {
@@ -205,7 +232,6 @@ export class InputLayerSystem extends createSystem({}) {
       actions.recenter = true;
     }
     mem.prevStickPress = stickPress;
-    return grab;
   }
 
   /** Tracked hand: pinch = grab, fingertip velocity over the page = swipe. */
@@ -249,32 +275,43 @@ export class InputLayerSystem extends createSystem({}) {
     // The grab point is halfway between thumb and index tips.
     hand.grabPoint.copy(hand.indexTip).add(thumbTip).multiplyScalar(0.5);
 
-    // Swipe: only while NOT pinching, and only inside the book's swipe zone.
+    // Swipe / poke: only while NOT pinching, and only inside the book's zone.
     this.detectSwipe(hand, mem);
 
-    return isBound('grab', 'hand.pinch') && mem.pinching;
+    return mem.pinching;
   }
 
+  /**
+   * Two hand gestures over the page area of the book:
+   *  - SWIPE: fingertip moves sideways fast (like flicking a page).
+   *  - POKE: fingertip touches the OUTER edge of a page (right edge = next).
+   * Both share one cooldown so a swipe that starts on an edge only turns once.
+   */
   private detectSwipe(hand: HandState, mem: HandMemory): void {
     const zone = actions.swipeZone;
+    const swipeOn = isBound('turnPage', 'hand.swipe');
+    const pokeOn = isBound('turnPage', 'hand.poke');
     const allowed =
       zone &&
-      isBound('turnPage', 'hand.swipe') &&
+      (swipeOn || pokeOn) &&
       !mem.pinching &&
       (hand.handedness === 'left' ? zone.allowLeft : zone.allowRight);
     if (!zone || !allowed) {
       mem.swipePrevValid = false;
+      mem.pokeArmed = true;
       return;
     }
-    // Express the fingertip in the page's own coordinates.
+    // Express the fingertip in the book's own coordinates.
     zone.object.updateWorldMatrix(true, false);
     tmpMat.copy(zone.object.matrixWorld).invert();
     tmpVec.copy(hand.indexTip).applyMatrix4(tmpMat);
-    const inside =
-      Math.abs(tmpVec.x) < zone.halfWidth &&
-      Math.abs(tmpVec.y) < zone.halfHeight &&
-      Math.abs(tmpVec.z) < zone.maxDistance;
-    if (inside && mem.swipePrevValid && swipeCooldown === 0) {
+    // Height above the (V-shaped) page surface at this x.
+    const aboveSurface = tmpVec.z - (Math.abs(tmpVec.x) * zone.slope + zone.baseZ);
+    const overPage =
+      Math.abs(tmpVec.x) < zone.halfWidth && Math.abs(tmpVec.y) < zone.halfHeight;
+    const inside = overPage && Math.abs(aboveSurface) < zone.maxDistance;
+
+    if (swipeOn && inside && mem.swipePrevValid && swipeCooldown === 0) {
       const vx = (tmpVec.x - mem.swipePrevX) / frameDelta;
       // Like a paper book: finger moving right-to-left = next page.
       if (vx < -TUNING.swipeSpeed) actions.turnPage = 1;
@@ -283,17 +320,31 @@ export class InputLayerSystem extends createSystem({}) {
     }
     mem.swipePrevX = tmpVec.x;
     mem.swipePrevValid = inside;
+
+    if (pokeOn) {
+      const onEdge = Math.abs(tmpVec.x) > zone.halfWidth * (1 - TUNING.pokeEdge);
+      const touching = overPage && onEdge && Math.abs(aboveSurface) < TUNING.pokeTouch;
+      if (touching && mem.pokeArmed && swipeCooldown === 0) {
+        actions.turnPage = tmpVec.x > 0 ? 1 : -1;
+        swipeCooldown = TUNING.swipeCooldown;
+        mem.pokeArmed = false;
+      }
+      // Re-arm only after the fingertip clearly lifted off (3x the touch distance).
+      if (!overPage || Math.abs(aboveSurface) > TUNING.pokeTouch * 3) mem.pokeArmed = true;
+    }
   }
 }
 
-function updateButton(
-  button: ButtonAction,
-  held: boolean,
-  mem: HandMemory,
-): void {
-  button.pressed = held && !mem.grabHeld;
-  button.released = !held && mem.grabHeld;
+/**
+ * Turn "is it down this frame?" into edges. `button.held` still holds LAST
+ * frame's value when we get here, which is exactly what edge detection needs.
+ */
+function updateButton(button: ButtonAction, via: PressSource): void {
+  const held = via !== 'none';
+  button.pressed = held && !button.held;
+  button.released = !held && button.held;
   button.held = held;
   button.consumed = false;
-  mem.grabHeld = held;
+  if (button.pressed) button.via = via; // remember what started this press
+  if (!held) button.via = 'none';
 }

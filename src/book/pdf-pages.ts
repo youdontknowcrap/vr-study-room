@@ -28,6 +28,13 @@ export class PdfPages {
   aspect = 0.707;
   pageCount = 0;
   title = '';
+  /**
+   * A stable ID for this exact PDF file, used to remember your last page.
+   * pdf.js computes a "fingerprint" (a hash stored in / derived from the
+   * file), so renaming the file still finds your place. If a PDF has none
+   * we fall back to name + size + page count.
+   */
+  id = '';
 
   private doc: pdfjs.PDFDocumentProxy | null = null;
   private textures = new Map<number, Texture>();
@@ -44,6 +51,13 @@ export class PdfPages {
     pages.doc = await task.promise;
     pages.pageCount = pages.doc.numPages;
     pages.title = title;
+    const fingerprint = pages.doc.fingerprints?.[0];
+    if (fingerprint) {
+      pages.id = `fp:${fingerprint}`;
+    } else {
+      const size = 'data' in source ? source.data.byteLength : (await pages.doc.getDownloadInfo()).length;
+      pages.id = `file:${title}|${size}|${pages.pageCount}`;
+    }
     const first = await pages.doc.getPage(1);
     const vp = first.getViewport({ scale: 1 });
     pages.aspect = vp.width / vp.height;
