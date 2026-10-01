@@ -31,6 +31,7 @@ import {
   perfStats,
   stepLevel,
 } from '../settings.js';
+import { pdfKeepCount } from '../book/page-window.js';
 import { onRoomChange } from '../room/room-switch.js';
 import { createMenuTab, MenuPanel } from './menu-panel.js';
 
@@ -285,7 +286,7 @@ export class MenuSystem extends createSystem({}) {
         stepLevel(pdfCacheSize, PDF_CACHE_LEVELS, 1);
         break;
       case 'cache-reset':
-        pdfCacheSize.value = 6;
+        pdfCacheSize.value = 10;
         break;
       case 'perf-queue':
         pdfRenderQueue.value = !pdfRenderQueue.value;
@@ -300,7 +301,7 @@ export class MenuSystem extends createSystem({}) {
         // The recommended Quest set (same as the first-run defaults).
         pdfStreaming.value = true;
         pdfResolution.value = 1200;
-        pdfCacheSize.value = 6;
+        pdfCacheSize.value = 10;
         pdfRenderQueue.value = true;
         pdfPreview.value = true;
         break;
@@ -353,7 +354,7 @@ export class MenuSystem extends createSystem({}) {
           { id: 'tilt-up', label: 'Tilt +' },
         ],
         [
-          { id: 'play', label: m.playing.value ? '❚❚ Pause' : '▶ Play' },
+          { id: 'play', label: m.playing.value ? '❚❚ Ambience' : '▶ Ambience' },
           { id: 'next', label: 'Next ▶▶' },
         ],
         [
@@ -381,7 +382,7 @@ export class MenuSystem extends createSystem({}) {
    */
   private rebuildPerf(): void {
     const onOff = (v: boolean) => (v ? 'On' : 'Off');
-    const cache = pdfCacheSize.value;
+    const cache = pdfKeepCount(pdfCacheSize.value, pdfRenderQueue.value);
     this.panel.setTitle('Big PDF');
     this.panel.setRows(
       [
@@ -393,7 +394,7 @@ export class MenuSystem extends createSystem({}) {
         ],
         [
           { id: 'cache-down', label: 'Cache −' },
-          { id: 'cache-reset', label: cache === 0 ? 'Cache Old ±6' : `Cache ${cache} pg` },
+          { id: 'cache-reset', label: cache === 0 ? 'Cache Old ±6' : `Window ${cache} pg` },
           { id: 'cache-up', label: 'Cache +' },
         ],
         [

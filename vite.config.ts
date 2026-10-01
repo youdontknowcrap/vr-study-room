@@ -15,6 +15,48 @@ import { defineConfig, type Plugin } from 'vite';
  * URL. Ship the files from node_modules both in `vite` dev and in `dist`,
  * under `pdfjs/<dir>/`, so PDFs that need them can open.
  */
+/**
+ * Headset debug hook. The app POSTs JSON lines to /__debug/stream.
+ * They are appended to debug-stream.log and printed in this terminal.
+ */
+function streamDebugLog(): Plugin {
+  const logFile = path.resolve('debug-stream.log');
+  return {
+    name: 'stream-debug-log',
+    configureServer(server) {
+      server.middlewares.use('/__debug/stream', (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        req.on('data', (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes <= 1_000_000) chunks.push(chunk);
+        });
+        req.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          for (const line of text.split('\n')) {
+            if (!line.trim()) continue;
+            fs.appendFileSync(logFile, `${line}\n`);
+            try {
+              const row = JSON.parse(line) as { event?: string; heapMB?: number | null; detail?: unknown };
+              const detail = row.detail === undefined ? '' : ` ${JSON.stringify(row.detail)}`;
+              server.config.logger.info(`[stream] ${row.event ?? '?'} heap=${row.heapMB ?? '-'}MB${detail}`);
+            } catch {
+              server.config.logger.info(`[stream] ${line.slice(0, 240)}`);
+            }
+          }
+          res.statusCode = 204;
+          res.end();
+        });
+      });
+    },
+  };
+}
+
 function pdfjsStaticAssets(): Plugin {
   const root = path.resolve('node_modules/pdfjs-dist');
   const dirs = ['cmaps', 'standard_fonts', 'wasm', 'iccs'] as const;
@@ -80,7 +122,7 @@ const plainHttp = process.env.IWSDK_HTTP === '1';
 
 export default defineConfig({
   // Keep iwsdkDev() bare in the default case so it reads iwsdk.config.json.
-  plugins: [plainHttp ? iwsdkDev({ https: false }) : iwsdkDev(), pdfjsStaticAssets()],
+  plugins: [plainHttp ? iwsdkDev({ https: false }) : iwsdkDev(), pdfjsStaticAssets(), streamDebugLog()],
   server: { host: '0.0.0.0', port: 8081, strictPort: true, open: false },
   build: {
     outDir: 'dist',

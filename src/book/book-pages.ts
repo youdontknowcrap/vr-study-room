@@ -29,6 +29,11 @@ export interface BookPages {
   readonly aspect: number;
   onPageReady: (index: number) => void;
   get(index: number): Texture | null;
+  /**
+   * True when a turn may show this page: it already has pixels, the render
+   * gave up, or the index isn't a real page (a cover).
+   */
+  ready(index: number): boolean;
   keepAround(center: number): void;
   dispose(): void;
   getStats?(): PageStats;

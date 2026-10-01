@@ -17,7 +17,9 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { CanvasTexture, SRGBColorSpace, type Texture } from '@iwsdk/core';
 import { textureBytes, type BookPages, type PageStats } from './book-pages.js';
+import { pagesAround, pdfKeepCount } from './page-window.js';
 import { pdfCacheSize, pdfPreview, pdfRenderQueue, pdfResolution, pdfStreaming } from '../settings.js';
+import { streamLog } from '../debug/stream-log.js';
 
 // pdf.js parses PDFs in a Web Worker so the render loop never stalls.
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -26,6 +28,12 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const MAX_PAGE_PIXELS = 2048;
 /** [3 CACHE] "Old" cache rule: keep textures within this many pages. */
 const OLD_CACHE_RADIUS = 6;
+/**
+ * Pages around the open spread that must be previewed before we spend time
+ * on a sharp pass. One spread each way, so the next flip already has pixels.
+ * Order: this spread, then forward, then back.
+ */
+const UNLOCK_OFFSETS = [-1, 0, 1, 2, -2, -3];
 /**
  * [5 PREVIEW] Long side of the quick blurry pass. WHY ~360: small enough to
  * paint in a fraction of the time, big enough that you can see the page
@@ -146,9 +154,18 @@ interface Entry {
   px: number;
 }
 
+type Phase = 'preview' | 'sharp';
+
+/** [4 QUEUE] One page waiting to be painted. */
+interface Wanted {
+  index: number;
+  phase: Phase;
+}
+
 /** [4 QUEUE] The single render that is running right now. */
 interface Job {
   index: number;
+  phase: Phase;
   task: pdfjs.RenderTask | null;
   cancelled: boolean;
 }
@@ -175,22 +192,38 @@ export class PdfPages implements BookPages {
    */
   readonly debug = { texturesCreated: 0, texturesDisposed: 0, cancelled: 0, retriedWithoutAnnotations: 0, renders: 0 };
 
+  /**
+   * How many pages eviction is allowed to hold. The big-pdf test reads this.
+   * 13 = the old ±6 rule. Otherwise the active cache / stream window.
+   */
+  keepCount = OLD_CACHE_RADIUS * 2 + 1;
+
   private doc: pdfjs.PDFDocumentProxy | null = null;
   private loadingTask: pdfjs.PDFDocumentLoadingTask | null = null;
   /** Blob URL we created for a user file. Revoked on dispose. */
   private ownedUrl: string | null = null;
   private textures = new Map<number, Entry>();
+  /** Renders that failed. A broken page must not freeze turning. */
+  private failed = new Set<number>();
   /** Old (no queue) path: pages being rendered right now, all in parallel. */
   private pending = new Set<number>();
   /** [4 QUEUE] Pages wanted, most important first. */
-  private wanted: number[] = [];
+  private wanted: Wanted[] = [];
   /** [4 QUEUE] The one render in flight. */
   private busy: Job | null = null;
+  /** Right-hand page of the spread the reader is actually on. */
+  private viewCenter = 0;
+  /** Pages that must stay on the GPU for the current spread. */
+  private keep = new Set<number>();
   private lastRenderMs = 0;
   private unsubscribe: (() => void)[] = [];
 
   static async load(source: PdfSource, title: string): Promise<PdfPages> {
     const pages = new PdfPages();
+    const kind = 'file' in source ? 'file' : 'data' in source ? 'data' : 'url';
+    const bytes = 'file' in source ? source.file.size : 'data' in source ? source.data.byteLength : null;
+    streamLog('pdf.load.enter', { title, kind, bytes });
+    const t0 = performance.now();
     if ('url' in source && source.ownedUrl) pages.ownedUrl = source.ownedUrl;
     const task = pdfjs.getDocument(await documentOptions(source));
     pages.loadingTask = task;
@@ -214,8 +247,18 @@ export class PdfPages implements BookPages {
       const vp = first.getViewport({ scale: 1 });
       if (vp.height > 0) pages.aspect = vp.width / vp.height;
       pages.watchSettings();
+      streamLog('pdf.load.exit', {
+        title,
+        pages: pages.pageCount,
+        ms: Math.round(performance.now() - t0),
+      });
       return pages;
     } catch (err) {
+      streamLog('pdf.load.fail', {
+        title,
+        ms: Math.round(performance.now() - t0),
+        message: err instanceof Error ? err.message : String(err),
+      });
       pages.dispose();
       throw err;
     }
@@ -240,6 +283,7 @@ export class PdfPages implements BookPages {
     // re-renders the spread. The old textures stay visible until replaced,
     // so the page never flashes blank.
     live(pdfResolution, () => {
+      this.failed.clear();
       this.cancelBusy();
       this.onPageReady(-1);
     });
@@ -270,11 +314,24 @@ export class PdfPages implements BookPages {
     return entry?.tex ?? null;
   }
 
+  ready(index: number): boolean {
+    if (index < 0 || index >= this.pageCount) return true;
+    return this.textures.has(index) || this.failed.has(index);
+  }
+
   private request(index: number): void {
+    // A failed paint is not retried every frame. Resolution changes clear this.
+    if (this.failed.has(index)) return;
+    if (pdfRenderQueue.value && pdfCacheSize.value !== 0) {
+      // The wide window's order lives in keepAround (previews that unblock
+      // the next flip, then the sharp pass). Starting a sharp here would
+      // jump that queue and the flip would wait on the slow paint again.
+      return;
+    }
     if (pdfRenderQueue.value) {
-      // [4 QUEUE] Newest request goes to the FRONT: it's what you look at.
+      // Old queue (cache "Old"): newest page goes to the front.
       if (this.busy?.index === index) return;
-      this.wanted = [index, ...this.wanted.filter((i) => i !== index)];
+      this.wanted = [{ index, phase: 'sharp' }, ...this.wanted.filter((w) => w.index !== index)];
       this.pump();
     } else {
       // Old behaviour: start rendering immediately, in parallel with any
@@ -285,12 +342,20 @@ export class PdfPages implements BookPages {
   }
 
   /**
-   * Which pages to keep, most important first. center = right page of the
-   * open spread, so the spread itself is [center - 1, center].
+   * Which pages to keep. center = right page of the open spread, so the
+   * spread itself is [center - 1, center].
+   * Queue on: 10 pages with that spread in the middle.
+   * Queue off, or cache "Old": the original small window.
    */
   private keepList(center: number): number[] {
     const cache = pdfCacheSize.value;
     const inRange = (i: number) => i >= 0 && i < this.pageCount;
+    if (cache !== 0 && pdfRenderQueue.value) {
+      const list = pagesAround(center, this.pageCount, pdfKeepCount(cache, true));
+      // The open spread stays even if the window math ever misses it.
+      for (const i of [center - 1, center]) if (inRange(i) && !list.includes(i)) list.push(i);
+      return list;
+    }
     if (cache === 0) {
       // [3 CACHE] "Old": everything within ±6 pages (up to 13 textures).
       const out: number[] = [];
@@ -306,29 +371,117 @@ export class PdfPages implements BookPages {
     return order.filter(inRange).slice(0, Math.max(2, cache));
   }
 
+  /** Spread, then forward, then back, clipped to the pages we're keeping. */
+  private renderOrder(center: number): number[] {
+    const order = [center - 1, center];
+    for (let k = 1; order.length < this.keep.size + 8; k++) {
+      order.push(center + 2 * k - 1, center + 2 * k, center - 2 * k - 1, center - 2 * k);
+    }
+    return order.filter((i) => this.keep.has(i));
+  }
+
+  /**
+   * Preview the pages a flip would show, sharpen the open spread, then
+   * preview the rest of the window. Far pages stay at the preview until
+   * you reach them, so a 10-page window isn't 10 full-resolution textures
+   * the moment the file opens.
+   */
+  private rebuildWanted(): void {
+    const unlock = new Set(
+      UNLOCK_OFFSETS.map((d) => this.viewCenter + d).filter((i) => this.keep.has(i)),
+    );
+    const preview = (indexes: number[]): Wanted[] => {
+      const out: Wanted[] = [];
+      for (const i of indexes) {
+        if (this.failed.has(i) && !this.textures.has(i)) continue;
+        if (this.textures.has(i)) continue;
+        out.push({ index: i, phase: pdfPreview.value ? 'preview' : 'sharp' });
+      }
+      return out;
+    };
+    const order = this.renderOrder(this.viewCenter);
+    const unlockOrder = UNLOCK_OFFSETS.map((d) => this.viewCenter + d).filter((i) => unlock.has(i));
+    const rest = order.filter((i) => !unlock.has(i));
+    const sharp: Wanted[] = [];
+    for (const i of unlockOrder) {
+      const e = this.textures.get(i);
+      if (e && !this.isFresh(e) && !this.failed.has(i)) sharp.push({ index: i, phase: 'sharp' });
+    }
+    this.wanted = [...preview(unlockOrder), ...sharp, ...preview(rest)];
+  }
+
   /** Warm up pages around `center` and drop textures outside the cache window. */
   keepAround(center: number): void {
+    this.viewCenter = center;
+    const cache = pdfCacheSize.value;
     const keep = this.keepList(center);
-    // [3 CACHE] Evict everything outside the window.
-    for (const i of [...this.textures.keys()]) if (!keep.includes(i)) this.evict(i);
+    this.keep = new Set(keep);
+    this.keepCount =
+      cache === 0 ? OLD_CACHE_RADIUS * 2 + 1 : pdfRenderQueue.value ? pdfKeepCount(cache, true) : Math.max(2, cache);
+    // [3 CACHE] Evict everything outside the window. The open spread is inside it.
+    for (const i of [...this.textures.keys()]) if (!this.keep.has(i)) this.evict(i);
 
-    // Which pages to pre-render. "Old" cache keeps a wide window but only
-    // ever pre-rendered center-2..center+3; keep that so Old == old.
-    const warm =
-      pdfCacheSize.value === 0
-        ? [center - 1, center, center + 1, center + 2, center - 3, center - 2].filter((i) => i >= 0 && i < this.pageCount)
-        : keep;
+    if (!(pdfRenderQueue.value && cache !== 0)) {
+      // Which pages to pre-render. "Old" cache keeps a wide window but only
+      // ever pre-rendered center-2..center+3; keep that so Old == old.
+      const warm =
+        cache === 0
+          ? [center - 1, center, center + 1, center + 2, center - 3, center - 2].filter(
+              (i) => i >= 0 && i < this.pageCount,
+            )
+          : keep;
 
-    if (pdfRenderQueue.value) {
-      // [4 QUEUE] Replace the whole wish list (latest spread wins) and cancel
-      // a render that is no longer wanted, so we never waste seconds painting
-      // a page you've already flipped past.
-      this.wanted = warm.filter((i) => !this.isFresh(this.textures.get(i)));
-      if (this.busy && !warm.includes(this.busy.index)) this.cancelBusy();
-      this.pump();
-    } else {
-      for (const i of warm) this.get(i);
+      if (pdfRenderQueue.value) {
+        // [4 QUEUE] Old experiment: replace the wish list and cancel a render
+        // you've already flipped past.
+        this.wanted = warm
+          .filter((i) => !this.isFresh(this.textures.get(i)) && !(this.failed.has(i) && !this.textures.has(i)))
+          .map((i) => ({ index: i, phase: 'sharp' as Phase }));
+        if (this.busy && !warm.includes(this.busy.index)) this.cancelBusy();
+        this.pump();
+      } else {
+        for (const i of warm) this.get(i);
+      }
+      this.trace('pdf.keep', { center });
+      return;
     }
+
+    // Wide window: do NOT cancel a paint that is still inside it. Cancelling
+    // on every flip is why a big PDF never caught up and stayed white.
+    this.rebuildWanted();
+    if (this.busy && !this.keep.has(this.busy.index)) this.cancelBusy();
+    else if (this.busy?.phase === 'sharp' && !this.spreadHas(this.busy.index) && this.spreadNeedsSharp()) {
+      this.cancelBusy();
+    }
+    this.pump();
+    this.trace('pdf.keep', { center });
+  }
+
+  /** Heap, cache, and texture size attached to a streaming event. */
+  private trace(event: string, detail?: Record<string, unknown>): void {
+    let texBytes = 0;
+    for (const e of this.textures.values()) texBytes += textureBytes(e.tex);
+    streamLog(event, {
+      cached: this.textures.size,
+      keep: this.keepCount,
+      queued: this.wanted.length,
+      busy: this.busy ? `${this.busy.phase} p${this.busy.index + 1}` : null,
+      texMB: Math.round((texBytes / 1048576) * 10) / 10,
+      ...detail,
+    });
+  }
+
+  private spreadHas(index: number): boolean {
+    return index === this.viewCenter || index === this.viewCenter - 1;
+  }
+
+  /** The open pages still want a sharp pass (and they are real pages). */
+  private spreadNeedsSharp(): boolean {
+    for (const i of [this.viewCenter - 1, this.viewCenter]) {
+      if (i < 0 || i >= this.pageCount) continue;
+      if (!this.isFresh(this.textures.get(i)) && !this.failed.has(i)) return true;
+    }
+    return false;
   }
 
   getStats(): PageStats {
@@ -344,10 +497,13 @@ export class PdfPages implements BookPages {
   }
 
   dispose(): void {
+    this.trace('pdf.dispose');
     for (const off of this.unsubscribe) off();
     this.unsubscribe = [];
     this.cancelBusy();
     this.wanted = [];
+    this.failed.clear();
+    this.keep.clear();
     for (const i of [...this.textures.keys()]) this.evict(i);
     this.doc = null; // render code checks this and stops / drops results
     // Destroying the loading task terminates this document's pdf.js worker,
@@ -367,6 +523,7 @@ export class PdfPages implements BookPages {
     if (!e) return;
     this.textures.delete(i);
     this.freeTexture(e.tex);
+    this.trace('pdf.evict', { page: i + 1 });
   }
 
   /**
@@ -385,19 +542,29 @@ export class PdfPages implements BookPages {
   /** [4 QUEUE] Stop the running render (pdf.js throws RenderingCancelledException). */
   private cancelBusy(): void {
     if (!this.busy) return;
+    this.trace('pdf.render.cancel', { page: this.busy.index + 1, phase: this.busy.phase });
     this.busy.cancelled = true;
     this.busy.task?.cancel();
+  }
+
+  /** A queued pass already happened, or the page is broken and we're not retrying it. */
+  private phaseDone(w: Wanted): boolean {
+    if (this.failed.has(w.index) && !this.textures.has(w.index)) return true;
+    const e = this.textures.get(w.index);
+    if (w.phase === 'preview') return !!e;
+    return this.isFresh(e);
   }
 
   /** [4 QUEUE] Start the next wanted page if nothing is rendering. */
   private pump(): void {
     if (this.busy || !this.doc) return;
-    let index = this.wanted.shift();
-    while (index !== undefined && this.isFresh(this.textures.get(index))) index = this.wanted.shift();
-    if (index === undefined) return;
-    const job: Job = { index, task: null, cancelled: false };
+    let next = this.wanted.shift();
+    while (next && this.phaseDone(next)) next = this.wanted.shift();
+    if (!next) return;
+    const job: Job = { index: next.index, phase: next.phase, task: null, cancelled: false };
     this.busy = job;
-    void this.renderPage(index, job).finally(() => {
+    this.trace('pdf.pump', { page: next.index + 1, phase: next.phase });
+    void this.renderPage(next.index, job).finally(() => {
       if (this.busy === job) this.busy = null;
       this.pump();
     });
@@ -425,29 +592,49 @@ export class PdfPages implements BookPages {
     // Pass the canvas alone so pdf.js owns the 2D context. If annotations
     // throw (some real-world files), draw the page again without them.
     let painted = makeCanvas();
+    const t0 = performance.now();
+    this.trace('pdf.paint.enter', {
+      page: page.pageNumber,
+      px: pixels,
+      w: painted.width,
+      h: painted.height,
+    });
+    let outcome = 'ok';
     try {
-      const task = page.render({ canvas: painted, viewport, background: PAPER });
-      if (job) job.task = task; // so cancelBusy() can stop it
-      await task.promise;
-    } catch (first) {
-      painted.width = painted.height = 0;
-      // BUG FIX (was: every error got retried). A cancel is not a broken
-      // annotation, it means "stop". Retrying it re-did the expensive render
-      // we just tried to stop. Same when the book was closed under us.
-      if (isCancel(first) || !this.doc || job?.cancelled) throw first;
-      console.warn('[pdf] retrying without annotations', first);
-      this.debug.retriedWithoutAnnotations++;
-      painted = makeCanvas();
-      const task = page.render({
-        canvas: painted,
-        viewport,
-        background: PAPER,
-        annotationMode: pdfjs.AnnotationMode.DISABLE,
+      try {
+        const task = page.render({ canvas: painted, viewport, background: PAPER });
+        if (job) job.task = task; // so cancelBusy() can stop it
+        await task.promise;
+      } catch (first) {
+        painted.width = painted.height = 0;
+        // BUG FIX (was: every error got retried). A cancel is not a broken
+        // annotation, it means "stop". Retrying it re-did the expensive render
+        // we just tried to stop. Same when the book was closed under us.
+        if (isCancel(first) || !this.doc || job?.cancelled) throw first;
+        console.warn('[pdf] retrying without annotations', first);
+        this.debug.retriedWithoutAnnotations++;
+        painted = makeCanvas();
+        const task = page.render({
+          canvas: painted,
+          viewport,
+          background: PAPER,
+          annotationMode: pdfjs.AnnotationMode.DISABLE,
+        });
+        if (job) job.task = task;
+        await task.promise;
+      }
+      return painted;
+    } catch (err) {
+      outcome = isCancel(err) ? 'cancel' : 'fail';
+      throw err;
+    } finally {
+      this.trace('pdf.paint.exit', {
+        page: page.pageNumber,
+        px: pixels,
+        outcome,
+        ms: Math.round(performance.now() - t0),
       });
-      if (job) job.task = task;
-      await task.promise;
     }
-    return painted;
   }
 
   /** Wrap a canvas in a texture and show it, freeing whatever it replaces. */
@@ -461,6 +648,7 @@ export class PdfPages implements BookPages {
     tex.colorSpace = SRGBColorSpace; // PDFs are authored in sRGB
     tex.anisotropy = 4; // keeps text readable when the page is tilted
     this.debug.texturesCreated++;
+    this.failed.delete(index);
     this.textures.set(index, { tex, sharp, px });
     // Let the book swap its materials to the new texture FIRST, then free
     // the old one (preview or old resolution). Freeing it first would leave
@@ -481,12 +669,52 @@ export class PdfPages implements BookPages {
       this.pending.add(index);
     }
     const stopped = () => !this.doc || !!job?.cancelled;
+    const phase = job?.phase ?? 'both';
     let page: pdfjs.PDFPageProxy | null = null;
     const t0 = performance.now();
+    let outcome = 'ok';
+    this.trace('pdf.render.enter', { page: index + 1, phase });
     try {
       page = await this.doc.getPage(index + 1); // pdf.js is 1-based
       if (stopped()) return;
       this.debug.renders++;
+      if (job?.phase === 'preview') {
+        // A later flip may have already painted this page. Don't replace it.
+        if (!this.textures.has(index)) {
+          const low = await this.paint(page, PREVIEW_PIXELS, job);
+          if (stopped()) {
+            if (low) low.width = low.height = 0;
+            return;
+          }
+          if (low) this.publish(index, low, false, PREVIEW_PIXELS);
+        }
+        return;
+      }
+      if (job?.phase === 'sharp') {
+        // Old queue runs preview and sharp in this one job (one image decode).
+        // The wide window queues them separately, so this is usually a no-op.
+        if (pdfPreview.value && !this.textures.has(index)) {
+          const low = await this.paint(page, PREVIEW_PIXELS, job);
+          if (stopped()) {
+            if (low) low.width = low.height = 0;
+            return;
+          }
+          if (low) this.publish(index, low, false, PREVIEW_PIXELS);
+          if (stopped()) return;
+        }
+        if (this.isFresh(this.textures.get(index))) return;
+        const px = pdfResolution.value;
+        const sharp = await this.paint(page, px, job);
+        if (sharp && stopped()) {
+          sharp.width = sharp.height = 0;
+          return;
+        }
+        if (sharp) {
+          this.lastRenderMs = Math.round(performance.now() - t0);
+          this.publish(index, sharp, true, px);
+        }
+        return;
+      }
       // [5 PREVIEW] Only when nothing is shown yet for this page: a quick
       // low-res pass so you see the page right away instead of blank paper.
       if (pdfPreview.value && !this.textures.has(index)) {
@@ -511,12 +739,24 @@ export class PdfPages implements BookPages {
       }
     } catch (err) {
       if (isCancel(err)) {
-        // [4 QUEUE] Expected: you flipped past this page. NOT retried.
+        // [4 QUEUE] Expected: this page left the window. NOT retried.
+        outcome = 'cancel';
         this.debug.cancelled++;
       } else if (this.doc) {
+        // One failed attempt must not freeze the turn gate on a blank page.
+        outcome = 'fail';
+        this.failed.add(index);
+        this.trace('pdf.render.fail', {
+          page: index + 1,
+          phase,
+          message: err instanceof Error ? err.message : String(err),
+        });
         console.warn(`[pdf] failed to render page ${index + 1}`, err);
+      } else {
+        outcome = 'closed';
       }
     } finally {
+      this.trace('pdf.render.exit', { page: index + 1, phase, outcome, ms: Math.round(performance.now() - t0) });
       if (!job) this.pending.delete(index);
       try {
         page?.cleanup(); // drop decoded images now (big scans = big memory)

@@ -34,6 +34,8 @@ export class EpubPages implements BookPages {
   private decoded = new Map<string, Decoded | null>();
   private textures = new Map<number, Texture>();
   private pending = new Set<number>();
+  /** Pages that failed to paint. They must not block turning forever. */
+  private failed = new Set<number>();
   private lastRenderMs = 0;
 
   static async load(source: EpubSource, titleFallback: string): Promise<EpubPages> {
@@ -60,12 +62,18 @@ export class EpubPages implements BookPages {
     if (index < 0 || index >= this.pageCount) return null;
     const tex = this.textures.get(index);
     if (tex) return tex;
-    void this.render(index);
+    if (!this.failed.has(index)) void this.render(index);
     return null;
   }
 
+  ready(index: number): boolean {
+    if (index < 0 || index >= this.pageCount) return true;
+    return this.textures.has(index) || this.failed.has(index);
+  }
+
   keepAround(center: number): void {
-    for (let i = center - 2; i <= center + 3; i++) this.get(i);
+    // center-3 is the page a back-turn uncovers. Warm it or that turn waits forever.
+    for (let i = center - 3; i <= center + 3; i++) this.get(i);
     for (const [i, tex] of this.textures) {
       if (Math.abs(i - center) > CACHE_RADIUS) {
         tex.dispose();
@@ -120,8 +128,10 @@ export class EpubPages implements BookPages {
       }
       this.textures.set(index, tex);
       this.lastRenderMs = Math.round(performance.now() - t0);
+      this.failed.delete(index);
       this.onPageReady(index);
     } catch (err) {
+      this.failed.add(index);
       console.warn(`[epub] failed to render page ${index + 1}`, err);
     } finally {
       this.pending.delete(index);

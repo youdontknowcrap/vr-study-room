@@ -47,7 +47,9 @@ export class Music {
 
   private readonly el = new Audio();
   private unlocked = false;
-  private wantPlay = true; // start the ambience as soon as audio is allowed
+  // Fireplace / rain stay quiet until Play in the menu. Entering VR only
+  // unlocks the audio device; it does not start the loop.
+  private wantPlay = false;
 
   constructor(camera: Object3D, speakerParent: Object3D) {
     camera.add(this.listener);

@@ -15,6 +15,7 @@
 import { CanvasTexture, createSystem, Mesh, MeshBasicMaterial, PlaneGeometry, SRGBColorSpace } from '@iwsdk/core';
 import { app } from '../app.js';
 import { pdfCacheSize, pdfPreview, pdfRenderQueue, pdfResolution, pdfStreaming, perfStats } from '../settings.js';
+import { pdfKeepCount } from '../book/page-window.js';
 
 const W = 512;
 const H = 216;
@@ -68,7 +69,8 @@ export class StatsSystem extends createSystem({}) {
   private draw(): void {
     const s = app.book?.pageSource?.getStats?.();
     const mem = (performance as unknown as { memory?: MemoryInfo }).memory;
-    const cache = pdfCacheSize.value === 0 ? 'Old' : String(pdfCacheSize.value);
+    const keep = pdfKeepCount(pdfCacheSize.value, pdfRenderQueue.value);
+    const cache = keep === 0 ? 'Old' : String(keep);
     const flag = (v: boolean) => (v ? 'on' : 'off');
     this.lines = [
       `Render: ${s ? s.lastRenderMs : '-'} ms (last page)`,

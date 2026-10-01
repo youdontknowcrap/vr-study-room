@@ -229,10 +229,10 @@ async function runConfig(name) {
   await page.waitForTimeout(1500);
   const ev = await page.evaluate(() => {
     const p = window.app.book.pageSource;
-    return { cached: p.textures.size, created: p.debug.texturesCreated, disposed: p.debug.texturesDisposed, limit: window.settings.pdfCacheSize.value };
+    return { cached: p.textures.size, created: p.debug.texturesCreated, disposed: p.debug.texturesDisposed, limit: p.keepCount };
   });
-  const limit = ev.limit === 0 ? 13 : Math.max(2, ev.limit);
-  r.checks.eviction = { ...ev, ok: ev.cached <= limit && ev.created - ev.disposed === ev.cached };
+  // keepCount is the real cap (30 with the stream window, 13 for Old ±6).
+  r.checks.eviction = { ...ev, ok: ev.cached <= ev.limit && ev.created - ev.disposed === ev.cached };
 
   // ---- fast-flip stress: turn as soon as the animation allows, no waiting for renders
   const d0 = await page.evaluate(() => ({ ...window.app.book.pageSource.debug }));

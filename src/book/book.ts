@@ -46,6 +46,7 @@ import {
   Vector3,
 } from '@iwsdk/core';
 import type { BookPages } from './book-pages.js';
+import { turnAllowed } from './page-window.js';
 
 const PAGE_HEIGHT = 0.21; // meters (A5 height) at 100% size
 const TURN_SECONDS = 0.45;
@@ -124,6 +125,11 @@ export class Book {
   private assemble: { t: number } | null = null;
   private readonly cards: Mesh<PlaneGeometry, MeshBasicMaterial>[] = [];
   private readonly cardGroup = new Group();
+  /** Spinner shown on a page that doesn't have pixels yet, and in the corner when the next flip is waiting. */
+  private readonly loading = createPageLoader();
+  private readonly backWait: Mesh<PlaneGeometry, MeshBasicMaterial>;
+  private readonly forwardWait: Mesh<PlaneGeometry, MeshBasicMaterial>;
+  private loadingAcc = 0;
 
   constructor() {
     this.root.add(this.model);
@@ -159,7 +165,21 @@ export class Book {
       new PlaneGeometry(0.007, 1, 1, 24),
       new MeshStandardMaterial({ color: RIBBON_COLOR, roughness: 0.6, side: DoubleSide }),
     );
+    // On the inner short edge of the right page block (the gutter), not on
+    // the page face and not on the outside of the spine.
     this.halves.right.add(this.ribbon);
+
+    // Corner chip on the side that can't turn yet because that page is still painting.
+    const waitMat = () =>
+      new MeshBasicMaterial({ map: this.loading.tex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    this.backWait = new Mesh(this.pageGeo, waitMat());
+    this.forwardWait = new Mesh(this.pageGeo, waitMat());
+    this.backWait.visible = false;
+    this.forwardWait.visible = false;
+    this.backWait.renderOrder = 3;
+    this.forwardWait.renderOrder = 3;
+    this.halves.left.add(this.backWait);
+    this.halves.right.add(this.forwardWait);
 
     this.hitMesh = new Mesh(this.unitBox, new MeshBasicMaterial());
     this.hitMesh.visible = false; // raycasts still hit invisible meshes
@@ -227,6 +247,12 @@ export class Book {
 
     this.layoutRibbon();
 
+    // Outer lower corner of each page, just above the paper.
+    this.backWait.position.set(-w * 0.78, -h * 0.3, this.shownLeftT + 0.002);
+    this.forwardWait.position.set(w * 0.78, -h * 0.3, this.shownRightT + 0.002);
+    this.backWait.scale.set(0.05, 0.068, 1);
+    this.forwardWait.scale.set(0.05, 0.068, 1);
+
     // Invisible grab/hit box around everything (a bit generous).
     const reach = (w + m) * Math.cos(HALF_TILT) + g;
     this.hitMesh.scale.set(2 * reach + 0.02, h + 2 * m + 0.02, 0.07 + this.blockT);
@@ -234,15 +260,14 @@ export class Book {
   }
 
   /**
-   * Ribbon: lies on the right page next to the gutter, from just past the
-   * top edge (where it is glued to the spine) to the bottom edge, then hangs
-   * out of the book bending backward. Built by bending a strip of
-   * PlaneGeometry vertex by vertex.
+   * Ribbon: a marker on the short inner edge of the right page block, in
+   * the gutter between the two blocks. It runs the height of that edge and
+   * hangs a little below it. It does not lie on the page you are reading.
    */
   private layoutRibbon(): void {
     const h = this.pageHeight;
     const top = h / 2 + 0.004;
-    const hang = 0.06; // how much ribbon dangles below the book
+    const hang = 0.03;
     const length = top + h / 2 + hang;
     const geo = this.ribbon.geometry;
     const pos = geo.attributes.position;
@@ -251,24 +276,16 @@ export class Book {
       const x = base.getX(i);
       // PlaneGeometry y goes from +length/2 to -length/2: map to top..bottom.
       const y = top - (length / 2 - base.getY(i));
-      let px = x;
-      let py = y;
-      let pz = 0;
-      if (y < -h / 2) {
-        // Past the bottom edge: bend backward (-z) and drift outward a bit.
-        const s = -h / 2 - y;
-        const bend = MathUtils.degToRad(55);
-        py = -h / 2 - s * Math.cos(bend);
-        pz = -s * Math.sin(bend);
-        px += s * 0.12;
-      }
-      pos.setXYZ(i, px, py, pz);
+      pos.setXYZ(i, x, y, 0);
     }
     pos.needsUpdate = true;
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
-    // 1.2 cm from the gutter, just above the right page surface.
-    this.ribbon.position.set(0.012, 0, this.shownRightT + 0.0012);
+    // Rotate so the cloth stands on the short face (its normal points across
+    // the gutter). x is just off that face, into the gap. z is mid-thickness,
+    // so the strip is on the edge of the block, not on the page surface.
+    this.ribbon.rotation.set(0, Math.PI / 2, 0);
+    this.ribbon.position.set(-0.0015, 0, this.shownRightT / 2);
   }
 
   /** Page-block thickness for a page count, clamped so it always looks right. */
@@ -407,7 +424,8 @@ export class Book {
 
   canTurn(dir: TurnDir): boolean {
     if (!this.pages) return false;
-    return dir === 1 ? this.left + 1 <= this.pageCount - 1 : this.left >= 0;
+    // Also false while the pages that turn would reveal are still painting.
+    return turnAllowed(this.left, this.pageCount, dir, (i) => this.pages!.ready(i));
   }
 
   /** Animated turn triggered by a button / swipe / thumbstick. */
@@ -499,7 +517,7 @@ export class Book {
     this.assemble = { t: 0 };
     this.cardGroup.visible = true;
     for (let i = 0; i < this.cards.length; i++) {
-      const tex = this.pages?.get(this.left + 1 + i) ?? null;
+      const tex = this.pageMap(this.left + 1 + i);
       this.cards[i].material.map = tex;
       this.cards[i].material.color.set(tex ? 0xffffff : PAPER);
       this.cards[i].material.needsUpdate = true;
@@ -598,6 +616,7 @@ export class Book {
       this.shownRightT = this.blockT - this.shownLeftT;
       this.layout();
     }
+    this.syncPageWait(dt);
   }
 
   /** Re-apply textures for the current spread (e.g. after a page finished rendering). */
@@ -605,7 +624,7 @@ export class Book {
     if (this.assemble) {
       // Keep the intro cards up to date as textures arrive.
       for (let i = 0; i < this.cards.length; i++) {
-        const tex = this.pages?.get(this.left + 1 + i) ?? null;
+        const tex = this.pageMap(this.left + 1 + i);
         if (tex && this.cards[i].material.map !== tex) {
           this.cards[i].material.map = tex;
           this.cards[i].material.color.set(0xffffff);
@@ -630,12 +649,54 @@ export class Book {
   /** Point a page mesh at page `index` (blank paper / inside cover if unavailable). */
   private setMat(mesh: Mesh<PlaneGeometry, MeshBasicMaterial>, index: number): void {
     const mat = mesh.material;
-    const tex: Texture | null = this.pages?.get(index) ?? null;
+    const tex = this.pageMap(index);
     if (mat.map !== tex) {
       mat.map = tex;
       mat.needsUpdate = true; // shader changes when a map is added/removed
     }
     mat.color.set(tex ? 0xffffff : index < 0 ? INSIDE_COVER : PAPER);
+  }
+
+  /**
+   * Texture for a real page: the render if we have one, otherwise the loading
+   * card. Covers and pages a render gave up on stay plain paper.
+   */
+  private pageMap(index: number): Texture | null {
+    if (!this.pages || index < 0 || index >= this.pages.pageCount) return null;
+    const tex = this.pages.get(index);
+    if (tex) return tex;
+    return this.pages.ready(index) ? null : this.loading.tex;
+  }
+
+  /** True while this direction still has a page to turn onto, and it isn't painted yet. */
+  private directionWaiting(dir: TurnDir): boolean {
+    if (!this.pages || this.turn || this.assemble) return false;
+    const n = this.pageCount;
+    const inBook = dir === 1 ? this.left + 1 <= n - 1 : this.left >= 0;
+    if (!inBook) return false;
+    return !turnAllowed(this.left, n, dir, (i) => this.pages!.ready(i));
+  }
+
+  private showsLoader(index: number): boolean {
+    return !!this.pages && index >= 0 && index < this.pageCount && !this.pages.ready(index);
+  }
+
+  /** Corner chip while the next flip is waiting, and a spin on any page that is still blank. */
+  private syncPageWait(dt: number): void {
+    const back = this.directionWaiting(-1) && !this.showsLoader(this.left);
+    const fwd = this.directionWaiting(1) && !this.showsLoader(this.left + 1);
+    this.backWait.visible = back;
+    this.forwardWait.visible = fwd;
+    const onPage =
+      this.leftPage.material.map === this.loading.tex ||
+      this.rightPage.material.map === this.loading.tex ||
+      (this.leaf.visible &&
+        (this.leafFront.material.map === this.loading.tex || this.leafBack.material.map === this.loading.tex));
+    if (!back && !fwd && !onPage) return;
+    this.loadingAcc += dt;
+    if (this.loadingAcc < 1 / 12) return;
+    this.loadingAcc = 0;
+    this.loading.paint();
   }
 }
 
@@ -643,6 +704,40 @@ export class Book {
  * A 64x64 canvas with fine horizontal lines, tiled over the page blocks so
  * their edges look like stacked sheets of paper. Made in code: no download.
  */
+/** Paper card with a spinner. One canvas, redrawn while a page is still painting. */
+function createPageLoader(): { tex: CanvasTexture; paint: () => void } {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 360;
+  const ctx = canvas.getContext('2d')!;
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  let angle = -Math.PI / 2;
+  const paint = () => {
+    angle += 0.45;
+    ctx.fillStyle = '#fbf7ee';
+    ctx.fillRect(0, 0, 256, 360);
+    ctx.strokeStyle = '#e6dcc8';
+    ctx.lineWidth = 10;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(128, 150, 36, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#6e2c1d';
+    ctx.beginPath();
+    ctx.arc(128, 150, 36, angle, angle + Math.PI * 1.15);
+    ctx.stroke();
+    ctx.fillStyle = '#6e2c1d';
+    ctx.font = '600 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Loading', 128, 224);
+    tex.needsUpdate = true;
+  };
+  paint();
+  return { tex, paint };
+}
+
 function makePageEdgeTexture(): Texture {
   const c = document.createElement('canvas');
   c.width = c.height = 64;

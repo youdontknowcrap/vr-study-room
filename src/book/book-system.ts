@@ -47,6 +47,7 @@ import {
 } from '@iwsdk/core';
 import { actions, type Handedness, type HandState, type PressSource } from '../input/actions.js';
 import { decidePress, isQuickTap, nearPageSide, rayDragX, rayPageHit } from './page-grab.js';
+import { noteFrame } from '../debug/stream-log.js';
 import { app } from '../app.js';
 import { bookScale } from '../settings.js';
 import { getHeadPose } from '../room/head-pose.js';
@@ -240,6 +241,7 @@ export class BookSystem extends createSystem({}) {
   }
 
   update(delta: number): void {
+    noteFrame(delta);
     const book = app.book;
 
     // 1) Recenter: automatically when a VR session starts, or on request.

@@ -193,9 +193,13 @@ export const pdfResolution = levelSignal(KEY_PDF_RES, PDF_RES_LEVELS, 1200);
 /**
  * 3. PAGE CACHE SIZE: how many rendered pages to keep. 0 = "Old": the
  * original rule (keep anything within 6 pages of the spread, up to 13).
+ * 10 = the streaming window (open spread in the middle). With the render
+ * queue on, that window stays 10 even if an older saved value was 30 — see
+ * pdfKeepCount. The smaller steps still apply when the queue is off.
+ * A saved 30 is ignored (it is not in this list) and falls back to 10.
  */
-export const PDF_CACHE_LEVELS = [2, 4, 6, 8, 0] as const;
-export const pdfCacheSize = levelSignal(KEY_PDF_CACHE, PDF_CACHE_LEVELS, 6);
+export const PDF_CACHE_LEVELS = [2, 4, 6, 8, 10, 0] as const;
+export const pdfCacheSize = levelSignal(KEY_PDF_CACHE, PDF_CACHE_LEVELS, 10);
 
 /** 4. RENDER QUEUE: one render at a time, newest request wins, stale ones cancelled. */
 export const pdfRenderQueue = boolSignal(KEY_PDF_QUEUE, true);
