@@ -20,7 +20,8 @@
     "assets:sample-pdf": "python3 scripts/make-sample-pdf.py",
     "assets:ambience": "python3 scripts/make-ambience.py",
     "smoke": "node scripts/smoke-test.mjs",
-    "test:unit": "node --experimental-strip-types --no-warnings scripts/unit-page-grab.mjs && node --experimental-strip-types --no-warnings scripts/unit-palm-frame.mjs && node --experimental-strip-types --no-warnings scripts/unit-epub.mjs"
+    "test:unit": "node --experimental-strip-types --no-warnings scripts/unit-page-grab.mjs && node --experimental-strip-types --no-warnings scripts/unit-palm-frame.mjs && node --experimental-strip-types --no-warnings scripts/unit-epub.mjs",
+    "test:bigpdf": "node scripts/test-bigpdf.mjs"
   },
   "dependencies": {
     "@iwsdk/core": "1.0.0-rc.2",

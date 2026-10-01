@@ -46,3 +46,6 @@ pids/
 
 # Smoke test screenshots
 smoke*.png
+
+# Big PDF test output (scripts/test-bigpdf.mjs). Never commit big PDFs either.
+test-bigpdf-results.json
