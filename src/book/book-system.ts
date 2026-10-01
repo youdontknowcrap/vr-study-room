@@ -15,6 +15,7 @@ import { createSystem, Matrix4, Quaternion, Raycaster, Vector3 } from '@iwsdk/co
 import { actions, type Handedness, type HandState } from '../input/actions.js';
 import { app } from '../app.js';
 import { bookHand } from '../settings.js';
+import { getHeadPose } from '../room/head-pose.js';
 
 // scratch objects
 const m1 = new Matrix4();
@@ -23,6 +24,8 @@ const local = new Vector3();
 const headPos = new Vector3();
 const target = new Vector3();
 const targetQuat = new Quaternion();
+const headQuat = new Quaternion();
+const SCALE_SCRATCH = new Vector3(); // decompose() writes a scale here; we ignore it
 const up = new Vector3(0, 1, 0);
 const right = new Vector3();
 const ONE = new Vector3(1, 1, 1);
@@ -38,6 +41,8 @@ type GrabMode =
 export class BookSystem extends createSystem({}) {
   private grabs: Record<Handedness, GrabMode | null> = { left: null, right: null };
   private wasInXR = false;
+  /** Set when a VR session starts; cleared once we got a real head pose. */
+  private recenterPending = false;
 
   init(): void {
     const book = app.book;
@@ -56,12 +61,20 @@ export class BookSystem extends createSystem({}) {
     const book = app.book;
 
     // 1) Recenter: automatically when entering VR, or on request.
+    //    BUG FIX: we used to recenter with world.camera on the first VR
+    //    frame, which still held the 2D camera pose -> desk + book were put
+    //    under your chin after every Enter VR (e.g. after Add music…).
+    //    Now we wait until the XR frame gives us the REAL head pose.
     const inXR = !!this.world.session;
-    if ((inXR && !this.wasInXR && this.world.xrFrame) || actions.recenter) {
-      app.room.recenter(this.world.camera);
-      if (!this.bookIsHeld()) this.putOnDesk();
+    if (inXR && !this.wasInXR) this.recenterPending = true;
+    this.wasInXR = inXR;
+    if (this.recenterPending || actions.recenter) {
+      if (getHeadPose(this.world, headPos, headQuat)) {
+        this.recenterPending = false;
+        app.room.recenter(headPos, headQuat);
+        if (!this.bookIsHeld()) this.putOnDesk();
+      }
     }
-    if (this.world.xrFrame || !inXR) this.wasInXR = inXR;
 
     // 2) Which hand (if any) holds the book?
     const holderName = bookHand.value === 'desk' ? null : bookHand.value;
@@ -102,8 +115,9 @@ export class BookSystem extends createSystem({}) {
   private putOnDesk(): void {
     const anchor = app.room.bookAnchor;
     anchor.updateWorldMatrix(true, false);
-    // Use a dedicated scratch scale; target is the position scratch reused elsewhere.
-    anchor.matrixWorld.decompose(app.book.root.position, app.book.root.quaternion, ONE);
+    // decompose() also outputs a scale: give it a throwaway vector (writing it
+    // into ONE, which handMatrix() relies on staying 1,1,1, would be fragile).
+    anchor.matrixWorld.decompose(app.book.root.position, app.book.root.quaternion, SCALE_SCRATCH);
   }
 
   /** Hold the book above the palm, turned toward your eyes (like reading). */

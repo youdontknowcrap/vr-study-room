@@ -13,8 +13,10 @@ import {
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  type Quaternion,
   Vector3,
 } from '@iwsdk/core';
+import { yawOf } from './head-pose.js';
 
 /** Desk top this far below your eyes (meters). Typical seated eye-to-desk. */
 const DESK_BELOW_EYES = 0.5;
@@ -80,13 +82,11 @@ export class Room {
     this.area.updateMatrixWorld(true);
   }
 
-  /** Recenter using a camera/head object (uses its world position + heading). */
-  recenter(head: Object3D): void {
-    head.updateWorldMatrix(true, false);
-    const pos = new Vector3().setFromMatrixPosition(head.matrixWorld);
-    // Heading: direction the head looks, flattened onto the floor.
-    const fwd = new Vector3(0, 0, -1).transformDirection(head.matrixWorld);
-    const yaw = Math.atan2(-fwd.x, -fwd.z);
-    this.placeFor(pos, yaw);
+  /**
+   * Recenter on a head pose (world position + rotation). Get the pose with
+   * getHeadPose() from head-pose.ts, NOT from world.camera (see that file).
+   */
+  recenter(headPos: Vector3, headQuat: Quaternion): void {
+    this.placeFor(headPos, yawOf(headQuat, this.tmp));
   }
 }
