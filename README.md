@@ -1,10 +1,11 @@
 # VR Study Room
 
 A cozy virtual study room for Meta Quest, running in the browser (WebXR).
-You sit on the sofa in a sitcom apartment with a slanted
-reading stand on the coffee table, hold a book made from any PDF, and turn
-its pages with your hands, while your own music plays from a little radio
-on the table. (A built-in glass-door room with a pool view is the fallback.) Coming next: a whiteboard where you write math with your
+You sit at a slanted reading desk in a room with a sliding glass door onto
+a backyard pool (the built-in **Pool room**), or in **your own 3D room**
+(see [Custom scenes](#custom-scenes-your-own-rooms)). You hold a book made
+from any PDF and turn its pages with your hands, while your own music plays
+from a little radio on the desk. Coming next: a whiteboard where you write math with your
 fingertip (ideally on your real desk), and exporting your notes as a PDF.
 
 Built with **Meta Immersive Web SDK (IWSDK) 1.0.0-rc.2** + three.js + Vite +
@@ -86,7 +87,7 @@ Plan to submit on **Nov 16–17**, not on the last morning.
       If the real-desk handwriting uses passthrough, the real desk must matter.
 - [ ] **Original / New Experience**: code written from Sep 24, 2026 on. ✔ (repo started Sep 28, 2026)
 - [ ] **English** UI and materials. ✔
-- [ ] ~~No third-party logos/brands~~: Joey decided not to follow this rule (the sitcom apartment is the main room). Credits in ATTRIBUTION.md.
+- [ ] **No third-party logos/brands** in the repo: the shipped Pool room is CC0, and third-party room models live only in the local, gitignored `scenes/` folder.
 - [ ] All third-party assets properly licensed → **ATTRIBUTION.md**.
 - [ ] Not a thin wrapper around another service.
 - [ ] Free, available until winner announcement (~Dec 11, 2026).
@@ -241,7 +242,7 @@ to actions — **grab**, **select**, **turnPage**, **toggleMenu**,
 |---|---|---|---|
 | **Pick up the book** | **Squeeze (grip)** near it, or point at it and squeeze (it flies to your hand). Trigger works too when the book is NOT held and you aim at its cover/spine/edge (on a page, trigger grabs the page). | Pinch the cover/spine/edge, near it or point + pinch | – |
 | **Swap hands** | While holding, **squeeze** with the other hand on the book. Squeeze only: the other hand's trigger never swaps. | – (pinch grabs pages while the book is held) | – |
-| **Put it down** | Let go over/near the reading stand: it lands there, open and readable. Let go anywhere else: it falls (lands on the floor, table or sofa). | Same | – |
+| **Put it down** | Let go over/near the reading stand: it lands there, open and readable. Let go anywhere else: it falls (lands on the floor, a table or a sofa). | Same | – |
 | In your hand | It keeps the angle of your grip (no auto-facing). | Same | – |
 | **Turn page** | Thumbstick flick left/right (either hand) | Swipe over the page, or poke the page's outer edge | ← / → keys |
 | **Grab a page** | **Trigger** with your hand at a page, or aim the ray at it: the page follows your hand around the spine. Right page = forward, left page = back. Release past halfway = turn, else it falls back. A quick tap just flips it. Works with the book on the stand or in your other hand. The trigger of the hand holding the book does nothing. | Pinch a page (same rules; while the book is held, the free hand's pinch grabs pages) | – |
@@ -254,16 +255,34 @@ Menu contents: Open PDF… (leaves VR) · Sample book · Bring book back ·
 ◀ Page / Page ▶ · **Size − / Book 100% / Size +** (60–200 %, 10 % steps) ·
 **Desk ▼ / 63 cm / Desk ▲** (2 cm steps, 45–95 cm above the floor) ·
 **Tilt − / 15° / Tilt +** (5° steps, 0–40°) · Play/Pause · Next track ·
-Volume −/+ · Add music… (leaves VR) · **Room: Apartment / Glass door** ·
+Volume −/+ · Add music… (leaves VR) · **Room: Pool room / your scenes** ·
 **Quality: High / Lite** · Recenter · Close. Tapping a middle "value"
 button resets it. All settings are saved in localStorage.
 
-**Rooms.** *Apartment* (default) is a 3D model; you sit on the sofa and the
-desk height/tilt controls move a **reading stand on the coffee table** (the
-furniture never moves). *Quality: High* = full-resolution textures (15.9 MB
-download); *Lite* = 512 px textures (3.8 MB) if High stutters. Only the
-selected one downloads. *Glass door* is the built-in fallback room (also used
-automatically if the model fails to load; `?room=glass` forces it).
+**Rooms.** The *Pool room* (built in, the default) has a drafting desk.
+**Custom scenes** from your local `scenes/` folder are 3D models: the desk
+height/tilt controls move a **reading stand on the scene's table** (the
+furniture never moves). *Quality: High / Lite* picks the scene's
+full-resolution or low-texture build (only the selected one downloads). A
+missing or broken scene falls back to the Pool room with a message in the
+menu footer. `?room=glass` forces the Pool room, `?room=<folder>` a scene.
+
+### Custom scenes (your own rooms)
+
+Put your own rooms in **`scenes/<id>/`** at the repo root: a glTF/GLB model
+plus a `scene.json` that says where you sit, which table the reading stand
+goes on, the scale, credits and optional fixes. The folder is gitignored
+(only `scenes/README.md` and the tiny CC0 `scenes/_example/` are tracked),
+so third-party models never land in the public repo. The dev server, `vite
+preview` and `vite build` discover them automatically (`custom-scenes/index.json`
+from `vite-plugins/local-scenes.ts`), and the menu's **Room** button lists
+them after the Pool room. The app remembers the last one you picked.
+
+- Format and field reference: [scenes/README.md](scenes/README.md)
+- Step by step (Blender/Sketchfab export, KTX2 compression, picking the
+  seat and stand, testing on the Quest): [docs/adding-your-own-scene.md](docs/adding-your-own-scene.md)
+- Try it: `cp -r scenes/_example scenes/example`, reload, Room → *Example room*.
+- Publishing a build? `LOCAL_SCENES=off npm run build` leaves your scenes out.
 
 **Reading position is remembered** per PDF (localStorage): reopening the
 same file resumes there, and the red ribbon marks the page. The page blocks
@@ -327,25 +346,29 @@ src/
   audio/music.ts           playlist, <audio> → PositionalAudio on the radio
   room/
     room-types.ts          ★ the StudyRoom "plug-in" contract (desk, seat, tables, bounds)
-    room-config.ts         ★ the sitcom apartment: scale, seat, table, stand (+ how measured)
-    create-room.ts         builds the chosen room (falls back to the glass-door room)
+    room-config.ts         built-in rooms, room ids, the GlbRoomConfig type
+    scene-manifest.ts      ★ scene.json format: validation + defaults (unit-tested)
+    scene-loader.ts        fetches custom-scenes/index.json + a scene's manifest
+    create-room.ts         builds the chosen room (falls back to the pool room)
     room-switch.ts         swaps rooms at runtime (menu "Room" / "Quality")
-    glb-room.ts            a room from a GLB model + reading stand + fourth wall/TV
+    glb-room.ts            a room from a custom scene's model + reading stand + fixes
     reading-stand.ts       slanted stand that sits on a table (desk height/tilt)
-    procedural-room.ts     the glass-door room built from boxes
+    procedural-room.ts     the pool room built from boxes
     desk.ts                its drafting desk (floor-anchored, slanted)
     outdoor-view.ts        pool photo seen through the glass door
     head-pose.ts           live headset pose (fix for the "book vanished" bug)
   ui2d/launch-overlay.ts   2D page card: Open PDF / Add music
   panel.ts                 IWSDK starter's welcome panel (Enter VR / Exit buttons)
 public/
-  models/apartment/*.glb    the sitcom apartment, High + Lite builds (CC BY 4.0, see ATTRIBUTION.md)
   basis/                   KTX2 texture transcoder (from three.js)
-  textures/                glass-door room: pool photo + floor texture (CC0)
+  textures/                pool room: pool photo + floor texture (CC0)
   books/sample-book.pdf    6-page self-made sample (CC0)
   audio/*.mp3              self-made ambience loops (CC0)
   scenes/, ui/             IWSDK authored scene + welcome panel
-scripts/                   asset generators + headless smoke test
+scenes/                    YOUR rooms (gitignored except README.md + _example/), see scenes/README.md
+vite-plugins/local-scenes.ts  lists + safely serves scenes/ at custom-scenes/ (dev, preview, build)
+docs/adding-your-own-scene.md  guide: export, compress, seat/stand, test on Quest
+scripts/                   asset generators, unit tests, headless smoke test
 iwsdk.config.json          IWSDK project manifest (XR mode, hand tracking, emulator device)
 vite.config.ts             dev server (HTTPS toggle), base './'
 deploy/github-pages-workflow.yml     GitHub Pages workflow (move into .github/workflows/ to enable)
@@ -418,7 +441,7 @@ Today: Mon Sep 28, 2026. Deadline: Wed Nov 18, 12:00 PM PT.
 
 Later / stretch: **book drop page-flutter physics** (pages flap while the
 book falls, instead of a rigid box); sofa/armchair as real colliders;
-texture atlas for the sitcom apartment (69 → ~10 draw calls); push notes to a
+texture atlases for heavy custom scenes (fewer draw calls); push notes to a
 Git repo; UIKitML menus; wrist menu.
 
 ---
@@ -447,8 +470,8 @@ Git repo; UIKitML menus; wrist menu.
   ambience files. If audible, switch to OGG or decode into an AudioBuffer.
 - **Book-in-hand pose**: grab offsets in `book-system.ts` are first
   guesses; tune them on the device.
-- **Sitcom apartment cost**: ~69 draw calls for the model (one per
-  material) + ~20 for the app. Quest 2 copes with ~100 at 72 Hz, but check
+- **Custom scene cost**: one draw call per material in the model (a
+  sitcom-set model with joined meshes was ~69) + ~20 for the app. Quest 2 copes with ~100 at 72 Hz, but check
   frame timing; if High stutters use *Quality: Lite*, or atlas the textures.
 
 ---
