@@ -6,14 +6,25 @@
  * the origin in the palm instead.
  *
  * Canonical pose used to pin the signs (right OR left hand, palm up, fingers
- * pointing world −Z, thumb toward the body midline):
+ * pointing world −Z):
  *   palm +Z (out of the palm) = world +Y
  *   palm +Y (toward the fingertips) = world −Z
  *   palm +X = world +X
- * Right hand: thumbward = index − pinky = world −X, so +X points away from
- * the thumb. Left hand: thumbward = world +X, so +X points toward the thumb.
- * The cross product is mirrored between hands; the right-hand result is flipped
- * so +Z comes out of the palm on both.
+ * Try it with your own right hand: palm up, fingers pointing away from you,
+ * and the thumb sticks out to the RIGHT (world +X). The left hand mirrors
+ * that: thumb to the LEFT (world −X). So in the palm frame the right thumb
+ * is on +X and the left thumb is on −X.
+ *
+ * WHY the sign flip below exists: thumbward × fingerDir gives a vector that
+ * points out of the palm for the RIGHT hand (+X × −Z = +Y, palm up) but out
+ * of the BACK of the hand for the left (−X × −Z = −Y), because the two hands
+ * are mirror images. Flipping it for the left hand makes +Z come out of the
+ * palm on both.
+ *
+ * (Bug fix, Phase 2: this used to flip the RIGHT hand, and the unit test had
+ * the right thumb at −X with the palm up, which is a palm-DOWN right hand.
+ * The two mistakes agreed with each other, so the test passed while the
+ * frame was mirrored on a real hand.)
  */
 export interface V3 {
   x: number;
@@ -109,9 +120,10 @@ export function palmFrame(
   if (!thumbward || !finger) return null;
   if (Math.abs(dot(thumbward, finger)) > 0.92) return null;
 
-  // thumbward × fingerDir points out of the palm on the left hand only.
+  // thumbward × fingerDir points out of the palm on the RIGHT hand only
+  // (see the header): mirror it for the left hand.
   let palm = cross(thumbward, finger);
-  if (hand === 'right') palm = scale(palm, -1);
+  if (hand === 'left') palm = scale(palm, -1);
   const z = norm(palm);
   if (!z) return null;
   const yFlat = norm(sub(finger, scale(z, dot(finger, z))));

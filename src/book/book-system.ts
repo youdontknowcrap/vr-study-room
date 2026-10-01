@@ -466,8 +466,9 @@ export class BookSystem extends createSystem({}) {
       this.handMatrix(hand, m1);
       offset.copy(m1).invert().multiply(root.matrixWorld);
     } else if (hand.kind === 'hand' && hand.palmValid) {
-      // Right-hand thumb is −X in the palm frame, left-hand thumb is +X.
-      const side = h === 'right' ? -1 : 1;
+      // Right-hand thumb is +X in the palm frame, left-hand thumb is −X
+      // (palm-frame.ts), so `side` moves the book toward the thumb on both.
+      const side = h === 'right' ? 1 : -1;
       offset.compose(
         local.set(side * PALM_OFFSET.x, PALM_OFFSET.y, PALM_OFFSET.z),
         quat.setFromEuler(new Euler(PALM_OFFSET.tiltX, 0, 0)),
