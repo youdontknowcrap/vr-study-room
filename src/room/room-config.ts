@@ -52,6 +52,21 @@ export interface GlbRoomConfig {
    * Room space, meters: the wall runs along z = `z` from minX to maxX.
    */
   fourthWall?: { z: number; minX: number; maxX: number; height: number; tvX: number };
+  /**
+   * Sitcom sets have no CEILING either (studio lights hang there), so you see
+   * the sky dome when you look up. If set, we add a flat ceiling slab: its
+   * underside is at `y`, covering minX..maxX / minZ..maxZ (room space, m).
+   * Put `y` a little BELOW the tops of the model's walls so they poke into
+   * the slab (no gap, and no coplanar faces -> no z-fighting, see glb-room.ts).
+   */
+  ceiling?: { y: number; minX: number; maxX: number; minZ: number; maxZ: number };
+  /**
+   * Names of model materials that are "decals": flat things lying ON another
+   * surface, only a few mm away or exactly coplanar (rug on the floor,
+   * magazines on the table, posters on walls). They get polygonOffset so they
+   * always win the depth test instead of flickering (z-fighting).
+   */
+  decalMaterials?: string[];
   /** Walls for the falling-book physics, in room space. */
   bounds: RoomBounds;
   /** Shown in the console; the real credit line lives in ATTRIBUTION.md. */
@@ -108,7 +123,36 @@ export const APARTMENT: GlbRoomConfig = {
   extraSurfaces: [
     { x: -2.35, z: 2.5, y: 0.5, halfW: 0.85, halfD: 0.2, yaw: 0 }, // sofa seat cushions
   ],
-  fourthWall: { z: 4.46, minX: -5.74, maxX: 3.88, height: 2.6, tvX: -2.13 },
+  // Fourth wall + ceiling, measured from the model's vertices (meters):
+  //  - the model ends at z 4.465 (floor and side walls stop there); the side
+  //    walls' inner faces are at x -5.541 and 3.710, and they are 2.911 m tall.
+  //  - so the wall's face goes at z 4.44: 2.5 cm INSIDE the room, so the side
+  //    walls and floor poke 2.5 cm into our wall instead of ending flush with
+  //    it, and it runs past both side walls (x -5.74..3.88) and up into the
+  //    ceiling slab (height 2.95 > ceiling 2.89).
+  //  - there is no ceiling in the model at all -> `ceiling` adds one whose
+  //    underside (2.89) is 2 cm below the wall tops (2.911), so they overlap.
+  fourthWall: { z: 4.44, minX: -5.74, maxX: 3.88, height: 2.95, tvX: -2.13 },
+  ceiling: { y: 2.89, minX: -5.8, maxX: 4.3, minZ: -4.85, maxZ: 4.6 },
+  // Measured offsets above what they lie on: rug 3.4 mm above the floor;
+  // carpet + tile exactly ON the wood floor (0 mm!); magazines/coffee-table
+  // book 0-2 mm over the coffee table; bike + posters 1-6 mm off walls/fridge.
+  decalMaterials: [
+    'material_52', // the rug under the coffee table (right in your view)
+    'carpet',
+    'tile',
+    'redtile',
+    'Lined-Paper',
+    'writing',
+    'coffeetablebook',
+    'tvguide',
+    'bike',
+    'StearnsJohn',
+    'slide-porsche',
+    'stuporman',
+    'material_60',
+    'mitt',
+  ],
   // The whole apartment's walls (x -11.1..7.7, z -9.5..8.93 units) in meters.
   bounds: { minX: -5.55, maxX: 3.85, minZ: -4.75, maxZ: 4.4, height: 2.5 },
   credit: 'Sitcom apartment custom scene (Sketchfab), CC BY 4.0',
